@@ -50,6 +50,7 @@ final class LauncherModel: ObservableObject {
     }
 
     private var job: Task<Void, Never>?
+    private var sessionLog: SessionLog
     private static let logLimit = 5_000
     private static let metalHUDKey = "metalHUD"
     private static let wineDebugKey = "wineDebug"
@@ -78,7 +79,10 @@ final class LauncherModel: ObservableObject {
         profiles = listed.contains(selected) ? listed : [selected] + listed
         selectedProfile = selected
         paths = Paths(root: selected.root)
+        sessionLog = SessionLog(root: selected.root)
         refresh()
+        append("Session started for profile: \(selected.name)")
+        append("Install root: \(selected.root.path)")
     }
 
     var installFolder: URL { paths.root }
@@ -87,8 +91,11 @@ final class LauncherModel: ObservableObject {
         guard !phase.isBusy else { return }
         selectedProfile = profile
         paths = Paths(root: profile.root)
+        sessionLog = SessionLog(root: profile.root)
         UserDefaults.standard.set(profile.id, forKey: Self.selectedProfileKey)
         refresh()
+        append("Session started for profile: \(profile.name)")
+        append("Install root: \(profile.root.path)")
     }
 
     func createProfile(name: String) throws {
@@ -164,6 +171,8 @@ final class LauncherModel: ObservableObject {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !log.isEmpty else { return }
         log.append(LogLine(text: trimmed, kind: kind))
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        sessionLog.append("[\(timestamp)] [\(kind)] \(trimmed)")
         if log.count > Self.logLimit { log.removeFirst(log.count - Self.logLimit) }
     }
 
