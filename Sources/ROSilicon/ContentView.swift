@@ -8,6 +8,12 @@ struct ContentView: View {
     @State private var confirmQuit = false
     @State private var confirmClear = false
     @State private var editor: Editor?
+    @State private var showNewProfile = false
+    @State private var newProfileName = ""
+    @State private var profileError: String?
+    @State private var editingProfile: Profile?
+    @State private var profileToDelete: Profile?
+    @State private var confirmDeleteProfile = false
 
     /// The text settings behind ⌥, each shown in a sheet of the same shape.
     private enum Editor: String, Identifiable {
@@ -57,6 +63,21 @@ struct ContentView: View {
             Text(clearMessage)
         }
         .sheet(item: $editor) { sheet(for: $0) }
+        .sheet(isPresented: $showNewProfile) { newProfileSheet }
+        .sheet(item: $editingProfile) { profileEditSheet(for: $0) }
+        .confirmationDialog(
+            Strings.profileDeleteTitle, isPresented: $confirmDeleteProfile,
+            titleVisibility: .visible
+        ) {
+            Button(Strings.profileDeleteConfirm, role: .destructive) {
+                guard let profile = profileToDelete else { return }
+                do { try model.deleteProfile(profile) }
+                catch { profileError = error.localizedDescription }
+            }
+            Button(Strings.cancel, role: .cancel) {}
+        } message: {
+            Text(Strings.profileDeleteMessage(profileToDelete?.name ?? ""))
+        }
         .onAppear {
             model.refresh()
             modifiers.watch()
@@ -73,10 +94,55 @@ struct ContentView: View {
             Text(Strings.appTitle)
                 .font(.title3.weight(.semibold))
             Spacer()
+            profileMenu
             actionsMenu
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
+    }
+
+    private var profileMenu: some View {
+        Menu {
+            ForEach(model.profiles) { profile in
+                Menu {
+                    Button {
+                        model.selectProfile(profile)
+                    } label: {
+                        Label(Strings.profile(profile.name), systemImage: "person.crop.circle")
+                    }
+                    if profile.id != "main" {
+                        Divider()
+                        Button(Strings.menuEditProfile) {
+                            profileError = nil
+                            editingProfile = profile
+                        }
+                        Button(Strings.menuDeleteProfile, role: .destructive) {
+                            profileToDelete = profile
+                            confirmDeleteProfile = true
+                        }
+                    }
+                } label: {
+                    HStack {
+                        Text(profile.name)
+                        if profile == model.selectedProfile { Image(systemName: "checkmark") }
+                    }
+                }
+                .disabled(model.phase.isBusy)
+            }
+            Divider()
+            Button(Strings.menuNewProfile) {
+                newProfileName = ""
+                profileError = nil
+                showNewProfile = true
+            }
+            .disabled(model.phase.isBusy)
+        } label: {
+            Label(Strings.profile(model.selectedProfile.name), systemImage: "person.crop.circle")
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(Strings.profile(model.selectedProfile.name))
     }
 
     private var actionsMenu: some View {
@@ -314,6 +380,79 @@ struct ContentView: View {
     }
 
     // MARK: - Sheets
+
+    private var newProfileSheet: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(Strings.profileTitle)
+                .font(.headline)
+            Text(Strings.profileExplanation)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            TextField(Strings.profileField, text: $newProfileName)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit { createProfile() }
+            if let profileError {
+                Text(profileError)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+            }
+            HStack {
+                Spacer()
+                Button(Strings.cancel) { showNewProfile = false }
+                Button(Strings.profileCreate) { createProfile() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(newProfileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 460)
+    }
+
+    private func createProfile() {
+        do {
+            try model.createProfile(name: newProfileName)
+            showNewProfile = false
+        } catch {
+            profileError = error.localizedDescription
+        }
+    }
+
+    private func profileEditSheet(for profile: Profile) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(Strings.profileEditTitle)
+                .font(.headline)
+            Text(Strings.profileExplanation)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            TextField(Strings.profileField, text: $newProfileName)
+                .textFieldStyle(.roundedBorder)
+                .onAppear { newProfileName = profile.name }
+                .onSubmit { saveProfileName(profile) }
+            if let profileError {
+                Text(profileError)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+            }
+            HStack {
+                Spacer()
+                Button(Strings.cancel) { editingProfile = nil }
+                Button(Strings.profileSave) { saveProfileName(profile) }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(newProfileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 460)
+    }
+
+    private func saveProfileName(_ profile: Profile) {
+        do {
+            try model.renameProfile(profile, name: newProfileName)
+            editingProfile = nil
+        } catch {
+            profileError = error.localizedDescription
+        }
+    }
 
     @ViewBuilder
     private func sheet(for editor: Editor) -> some View {

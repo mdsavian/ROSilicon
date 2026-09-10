@@ -57,6 +57,13 @@ struct PathsTests {
         #expect(!paths.prefixInitialized)
 
         try temp.makeDirectory("wine/drive_c/windows/system32")
+        #expect(!paths.prefixInitialized)
+
+        try temp.write(to: "wine/drive_c/windows/system32/kernel32.dll")
+        try temp.makeDirectory("wine/drive_c/windows/syswow64")
+        #expect(!paths.prefixInitialized)
+
+        try temp.write(to: "wine/drive_c/windows/syswow64/kernel32.dll")
         #expect(paths.prefixInitialized)
     }
 
@@ -89,6 +96,30 @@ struct PathsTests {
         #expect(environment["WINEPREFIX"] == paths.prefix.path)
         #expect(environment["WINELOADER"] == paths.wine.path)
         #expect(environment["WINESERVER"] == paths.wineserver.path)
+    }
+
+    @Test func eachInstallRootGetsItsOwnSteamMutex() {
+        let first = Paths(root: URL(filePath: "/test/profile-one"))
+            .wineEnvironment()["RO_SILICON_MUTEX"]
+        let second = Paths(root: URL(filePath: "/test/profile-two"))
+            .wineEnvironment()["RO_SILICON_MUTEX"]
+
+        #expect(first != nil)
+        #expect(first != second)
+    }
+
+    @Test func wineEnvironmentOmitsSidecarWhenItWasMarkedUnsupported() {
+        let defaults = UserDefaults.standard
+        let key = Paths.x87SidecarPreferenceKey
+        let previous = defaults.object(forKey: key)
+        defer {
+            if let previous { defaults.set(previous, forKey: key) }
+            else { defaults.removeObject(forKey: key) }
+        }
+        defaults.set(false, forKey: key)
+
+        #expect(Paths(root: URL(filePath: "/test/root")).wineEnvironment()
+            ["X87_SIDECAR_PATH"] == nil)
     }
 
     /// The bundle's own libraries go first, and anything the process inherited

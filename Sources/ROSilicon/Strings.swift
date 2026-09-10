@@ -30,6 +30,10 @@ enum Strings {
     // MARK: - Menu
 
     static var menuMore: String { t("menu.more") }
+    static func profile(_ name: String) -> String { t("menu.profile", name) }
+    static var menuNewProfile: String { t("menu.new_profile") }
+    static var menuEditProfile: String { t("menu.edit_profile") }
+    static var menuDeleteProfile: String { t("menu.delete_profile") }
     static var menuShowInstallFolder: String { t("menu.show_install_folder") }
     static var menuShowGameFolder: String { t("menu.show_game_folder") }
     static var menuReinstallClient: String { t("menu.reinstall_client") }
@@ -75,6 +79,17 @@ enum Strings {
     static var environmentField: String { t("sheet.environment.field") }
     static var resetToDefault: String { t("sheet.reset") }
     static var done: String { t("sheet.done") }
+    static var profileTitle: String { t("sheet.profile.title") }
+    static var profileEditTitle: String { t("sheet.profile.edit_title") }
+    static var profileExplanation: String { t("sheet.profile.explanation") }
+    static var profileField: String { t("sheet.profile.field") }
+    static var profileCreate: String { t("sheet.profile.create") }
+    static var profileSave: String { t("sheet.profile.save") }
+    static var profileDeleteTitle: String { t("dialog.profile_delete.title") }
+    static var profileDeleteConfirm: String { t("dialog.profile_delete.confirm") }
+    static func profileDeleteMessage(_ name: String) -> String {
+        t("dialog.profile_delete.message", name)
+    }
 
     // MARK: - Checklist
 

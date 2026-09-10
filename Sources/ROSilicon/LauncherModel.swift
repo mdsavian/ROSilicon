@@ -13,6 +13,8 @@ final class LauncherModel: ObservableObject {
     }
 
     @Published private(set) var paths: Paths
+    @Published private(set) var profiles: [Profile]
+    @Published private(set) var selectedProfile: Profile
     @Published private(set) var status = Status()
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var step = ""
@@ -52,6 +54,7 @@ final class LauncherModel: ObservableObject {
     private static let metalHUDKey = "metalHUD"
     private static let wineDebugKey = "wineDebug"
     private static let extraEnvironmentKey = "extraEnvironment"
+    private static let selectedProfileKey = "selectedProfile"
 
     struct LogLine: Identifiable, Sendable {
         /// What the line is, so the view can colour it without matching on
@@ -64,11 +67,57 @@ final class LauncherModel: ObservableObject {
     }
 
     init() {
-        paths = Paths.locateRoot()
+        let store = ProfileStore(base: Paths.applicationSupportRoot.appending(path: "ROSilicon"))
+        let listed = store.profiles
+        let selectedID = UserDefaults.standard.string(forKey: Self.selectedProfileKey) ?? "main"
+        let environmentRoot = Paths.installRoot.standardizedFileURL
+        let selected = listed.first(where: {
+            $0.id == selectedID && $0.root.standardizedFileURL == environmentRoot
+        }) ?? listed.first(where: { $0.root.standardizedFileURL == environmentRoot })
+            ?? Profile(id: "environment", name: "Environment", root: environmentRoot)
+        profiles = listed.contains(selected) ? listed : [selected] + listed
+        selectedProfile = selected
+        paths = Paths(root: selected.root)
         refresh()
     }
 
     var installFolder: URL { paths.root }
+
+    func selectProfile(_ profile: Profile) {
+        guard !phase.isBusy else { return }
+        selectedProfile = profile
+        paths = Paths(root: profile.root)
+        UserDefaults.standard.set(profile.id, forKey: Self.selectedProfileKey)
+        refresh()
+    }
+
+    func createProfile(name: String) throws {
+        guard !phase.isBusy else { return }
+        let store = ProfileStore(base: Paths.applicationSupportRoot.appending(path: "ROSilicon"))
+        let profile = try store.create(name: name)
+        profiles = store.profiles
+        selectProfile(profile)
+    }
+
+    func renameProfile(_ profile: Profile, name: String) throws {
+        guard !phase.isBusy else { return }
+        let store = ProfileStore(base: Paths.applicationSupportRoot.appending(path: "ROSilicon"))
+        let renamed = try store.rename(profile, to: name)
+        profiles = store.profiles
+        if selectedProfile.id == profile.id {
+            selectedProfile = renamed
+        }
+    }
+
+    func deleteProfile(_ profile: Profile) throws {
+        guard !phase.isBusy else { return }
+        let store = ProfileStore(base: Paths.applicationSupportRoot.appending(path: "ROSilicon"))
+        _ = try store.delete(profile)
+        profiles = store.profiles
+        if selectedProfile.id == profile.id {
+            selectProfile(profiles[0])
+        }
+    }
 
     // MARK: - State
 

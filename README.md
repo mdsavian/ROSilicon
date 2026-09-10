@@ -64,6 +64,13 @@ those links are rewritten on every launch, so they follow the app if it moves.
 Replacing the app is what updates any of it; nothing on disk needs migrating,
 and the copies an older version left behind are removed on the next install.
 
+The launcher also supports multiple profiles. Choose **Profile** in the
+toolbar to switch accounts, or choose **Create New Profile…**. Each profile
+gets its own Wine prefix and game folder under
+`~/Library/Application Support/ROSilicon/profiles/<name>`, while **Main** keeps
+the original installation location. Install the client once for each profile
+you want to use; then each profile can be launched independently.
+
 **Install** starts by checking Rosetta 2 — everything below the launcher is x86
 code, so a Mac without it is told in a second rather than after several
 gigabytes — and then runs three stages, each skipped when it is already done:

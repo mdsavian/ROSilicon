@@ -54,7 +54,10 @@ void launchGame() {
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
-    HANDLE hMutex = CreateMutexA(NULL, TRUE, "Global\\SteamDummyMonitor");
+    const char *mutexName = getenv("RO_SILICON_MUTEX");
+    if (mutexName == NULL || mutexName[0] == '\0')
+        mutexName = "Global\\SteamDummyMonitor";
+    HANDLE hMutex = CreateMutexA(NULL, TRUE, mutexName);
 
     BOOL alreadyRunning = (GetLastError() == ERROR_ALREADY_EXISTS);
 

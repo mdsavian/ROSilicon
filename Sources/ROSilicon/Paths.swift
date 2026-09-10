@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 enum BundledToolsError: LocalizedError {
@@ -19,8 +20,16 @@ enum BundledToolsError: LocalizedError {
 /// DXVK, x87sidecar and the Steam stub, so the launcher downloads nothing but
 /// the game client and can live anywhere, /Applications included.
 struct Paths: Sendable {
+    static let x87SidecarPreferenceKey = "x87SidecarEnabled"
+
     static let defaultClientURL = URL(string:
         "https://ro1patch.gnjoylatam.com/LIVE/client/LATAM_RO1_Live_20260601_091136.tar")!
+
+    static var applicationSupportRoot: URL {
+        FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(filePath: NSHomeDirectory()).appending(path: "Library/Application Support")
+    }
 
     let root: URL
 
@@ -45,12 +54,15 @@ struct Paths: Sendable {
     /// True when the prefix has actually been booted, not merely created.
     ///
     /// Any wine invocation with WINEPREFIX set bootstraps the prefix, so the
-    /// folder existing is not proof it is complete; these two are written at
-    /// the end of that bootstrap.
+    /// folder existing is not proof it is complete; these files are written at
+    /// the end of that bootstrap. The 32-bit WoW64 tree matters because the
+    /// Ragnarok client is a PE32 application; a prefix with only system32 can
+    /// pass the old check and later fail with kernel32.dll status c0000135.
     var prefixInitialized: Bool {
         let fm = FileManager.default
         return fm.fileExists(atPath: prefix.appending(path: "system.reg").path)
-            && fm.fileExists(atPath: driveC.appending(path: "windows/system32").path)
+            && fm.fileExists(atPath: driveC.appending(path: "windows/system32/kernel32.dll").path)
+            && fm.fileExists(atPath: driveC.appending(path: "windows/syswow64/kernel32.dll").path)
     }
 
     /// Where the app keeps everything it ships with: the Wine runtime, DXVK,
@@ -80,6 +92,26 @@ struct Paths: Sendable {
     static var x87Sidecar: URL? {
         let sidecar = bundledTools.appending(path: "x87sidecar")
         return FileManager.default.isExecutableFile(atPath: sidecar.path) ? sidecar : nil
+    }
+
+    /// The sidecar is an optional Rosetta optimization. Its binary hooks
+    /// Rosetta internals, so a release built for a different Rosetta revision
+    /// must not be injected into Wine. Install/Repair records the probe result;
+    /// an unset preference preserves the historical opt-in behavior until the
+    /// first probe has completed.
+    static var x87SidecarForWine: URL? {
+        guard UserDefaults.standard.object(forKey: x87SidecarPreferenceKey) as? Bool ?? true
+        else { return nil }
+        return x87Sidecar
+    }
+
+    /// A separate Wine prefix must also get a separate Steam stub mutex so two
+    /// profiles can launch concurrently without one stub treating the other as
+    /// its already-running instance.
+    private var steamMutexName: String {
+        let digest = SHA256.hash(data: Data(root.standardizedFileURL.path.utf8))
+        let suffix = digest.prefix(12).map { String(format: "%02x", $0) }.joined()
+        return "Global\\ROSilicon-\(suffix)"
     }
 
     /// Everything the app must carry for an install to be possible. Throws
@@ -114,11 +146,12 @@ struct Paths: Sendable {
         env["WINEPREFIX"] = prefix.path
         env["WINELOADER"] = wine.path
         env["WINESERVER"] = wineserver.path
+        env["RO_SILICON_MUTEX"] = steamMutexName
         // Wine's loader re-execs itself under `x87sidecar --cooperative` when
         // this is set. That is what makes the client's legacy x87 float code
         // fast on Apple Silicon, and unlike rosettax87 it needs no
         // task_for_pid privilege, so macOS never asks for a password.
-        if let sidecar = Self.x87Sidecar { env["X87_SIDECAR_PATH"] = sidecar.path }
+        if let sidecar = Self.x87SidecarForWine { env["X87_SIDECAR_PATH"] = sidecar.path }
         // Wine dlopen()s freetype, gnutls, MoltenVK and SDL2 by leaf name; the
         // bundle keeps them here rather than relying on a system copy.
         let dyld = env["DYLD_LIBRARY_PATH"].map { ":\($0)" } ?? ""
@@ -133,10 +166,7 @@ struct Paths: Sendable {
         if let override = ProcessInfo.processInfo.environment["RO_ROOT"] {
             return URL(filePath: override).standardizedFileURL
         }
-        let base = FileManager.default.urls(
-            for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(filePath: NSHomeDirectory()).appending(path: "Library/Application Support")
-        return base.appending(path: "ROSilicon")
+        return applicationSupportRoot.appending(path: "ROSilicon")
     }
 
     static func locateRoot() -> Paths { Paths(root: installRoot) }

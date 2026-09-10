@@ -15,6 +15,10 @@
 
 /* Menu */
 "menu.more" = "More actions — hold ⌥ for more";
+"menu.profile" = "Profile: %@";
+"menu.new_profile" = "Create New Profile…";
+"menu.edit_profile" = "Edit Name…";
+"menu.delete_profile" = "Delete Profile…";
 "menu.show_install_folder" = "Show Installation Folder in Finder";
 "menu.show_game_folder" = "Show Game Folder in Finder";
 "menu.reinstall_client" = "Reinstall Game Client…";
@@ -54,6 +58,15 @@
 "sheet.environment.field" = "Variables";
 "sheet.reset" = "Reset to Default";
 "sheet.done" = "Done";
+"sheet.profile.title" = "Create a profile";
+"sheet.profile.edit_title" = "Edit profile name";
+"sheet.profile.explanation" = "Each profile has its own Wine prefix and settings, so multiple accounts can run independently.";
+"sheet.profile.field" = "Profile name";
+"sheet.profile.create" = "Create Profile";
+"sheet.profile.save" = "Save Name";
+"dialog.profile_delete.title" = "Delete profile?";
+"dialog.profile_delete.confirm" = "Delete Profile";
+"dialog.profile_delete.message" = "This moves the installation for %@ to the Trash. Other profiles are not affected.";
 
 /* Checklist */
 "item.rosetta" = "Rosetta 2";
