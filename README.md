@@ -3,15 +3,18 @@
 A native macOS launcher for the Ragnarok Online LATAM Windows client on Apple
 Silicon. One window: it installs everything and runs the game.
 
-It ships the Wine runtime from
-[WoWSilicon](https://github.com/WoWSilicon/WoWSilicon) inside the app, with
-`x87sidecar` for the client's legacy x87 floating-point code, and DXVK for
-Direct3D 9. Nothing but the game client is downloaded at install time.
+It ships [its own build of Wine](#the-wine-runtime) inside the app —
+[WineAndAqua](https://github.com/WineAndAqua/wine)'s macOS Wine, with patches
+that are mostly [WoWSilicon](https://github.com/WoWSilicon/WoWSilicon)'s — with
+`x87sidecar` for the client's legacy x87 floating-point code (or
+[`rosettax87_jit`](#x87-translation), chosen behind ⌥), and DXVK for Direct3D 9.
+Nothing but the game client is downloaded at install time.
 
 ## Build
 
 ```sh
 make restore        # -> .wine-runtime, the pinned Wine tree (once)
+make runtime        # -> .wine-runtime built from source instead (see below)
 make steam-stub     # -> .steam-stub, the cross-compiled Steam stub (once)
 make                # -> ROSilicon.app in this folder
 make dmg            # -> the app and ROSilicon-<VERSION>.dmg
@@ -30,15 +33,14 @@ version is read from the `VERSION` file, and names both the bundle and the disk
 image.
 
 The runtime goes in *before* the signature, since `codesign` seals everything
-under `Resources/`, and the [wintrust patch](#the-wintrust-patch) is applied to
-it there and then — by the launcher's own code, through the `--patch-wintrust`
-flag its binary answers, so there is one implementation of the patch and not
-two. The tree in `.wine-runtime` is left untouched, and still matches the
-runtime lock `make bundle` validates it against.
+under `Resources/`. It goes in as it is, the
+[wintrust patch](#the-wintrust-patch) already built into it, so the bundle's
+copy matches the tree in `.wine-runtime` and the runtime lock `make bundle`
+validates that against.
 
-`make restore` fetches the pinned tree published by WoWSilicon and checks it
-against `Packaging/WineRuntime/artifact-lock.json`; `tools/wine-runtime/` also
-holds the scripts that build one from source.
+`make restore` fetches the pinned tree from the releases of the repository
+`Packaging/WineRuntime/artifact-lock.json` names, and checks it against that
+lock; [The Wine runtime](#the-wine-runtime) says how one is built.
 
 The disk image is the one to hand to someone else: it opens on a window holding
 the app beside a shortcut to `/Applications` to drag it onto, and wears the app's
@@ -52,11 +54,12 @@ The app is self-contained and installs into
 `~/Library/Application Support/ROSilicon`:
 
 ```
-wine/              the prefix; the game lands in drive_c/Gravity/Ragnarok
+wine/              the default profile's prefix; the game lands in drive_c/Gravity/Ragnarok
+profiles/<name>/   each additional profile's prefix, laid out the same way
 downloads/         in-progress downloads, removed when they finish
 ```
 
-That is all of it. Wine, DXVK, the Steam stub and `x87sidecar` are read where
+That is all of it. Wine, DXVK, the Steam stub and the x87 hooks are read where
 they lie inside `ROSilicon.app` — patched, signed and never written to, so the
 signature holds and the app works wherever it sits, `/Applications` included.
 The prefix links to the two Windows binaries rather than holding copies, and
@@ -88,12 +91,75 @@ gigabytes — and then runs three stages, each skipped when it is already done:
 **Play** links DXVK and the Steam stub into the prefix and starts the client
 through `steam.exe`, which is what the client expects to find running.
 
+Play stays available while the game runs: each press opens another client in
+the same prefix, with the settings of that moment. For a few seconds after each
+press the button shows a spinner and ignores further presses, so a double click
+opens one client, not two. A link already pointing at
+the app is left alone, so a second launch never pulls DXVK out from under a
+client that is starting. Every `steam.exe` waits for the last client to close,
+so the launcher shows the game as running until then, whichever was started
+first. **Quit Game** shuts all of them down, since it stops everything in the
+prefix.
+
 The `…` menu holds the rest: show the installation or game folder, reinstall the
 client, change the client URL, copy the log, and clear the installation (to the
 Trash, after a confirmation). Holding ⌥ also reveals `WINEDEBUG` (`-all` by
 default, so Wine stays quiet) and a field for extra `NAME=value` variables
 separated by `;`. Both are remembered, applied after everything the launcher
 sets itself — so they can override it — and take effect on the next launch.
+
+## Profiles
+
+Each profile is a Wine prefix of its own — its own game client, registry and
+settings — chosen from the menu beside `…`. The default profile is `wine/`, the
+prefix every install had before there were profiles, so an existing install
+carries on as it was. It is always there and cannot be deleted.
+
+**New Profile…** asks for a name and makes `profiles/<name>/`, which is all a
+profile is: the launcher keeps no list of them, so the folders under
+`profiles/` are the profiles. A new one starts empty, and **Install** boots its
+prefix and downloads a client into it, the same as for the default profile on
+a fresh install. Names are kept as typed, trimmed; they cannot start with a dot
+or contain `/` or `:`, and cannot match another profile's name in any case.
+
+**Delete Profile…** moves the chosen profile's folder to the Trash, after a
+confirmation, and switches back to the default profile; for the default profile
+it is disabled. **Clear Installation Folder** still takes everything, every
+profile included.
+
+The chosen profile is remembered between launches (`profile` in the launcher's
+preferences), and everything in the window is about it: the checklist,
+Install, Play, the folders the menu reveals, winecfg and cmd.exe. Switching is
+locked while an install or a game is under way, since each is bound to the
+prefix it started in, and Quit Game has to reach the one the game runs in.
+
+## x87 translation
+
+The client does its floating-point math on the x87 stack, which Rosetta 2
+translates slowly. Wine's loader, patched for it, re-execs the 32-bit client
+under a hook that takes over that translation, and the app carries two:
+
+- **x87sidecar**, the default. Wine hands it the process's task port itself,
+  so it needs no privilege and macOS never asks for anything.
+- **rosettax87_jit**, chosen under **x87 Translation** in the `…` menu while
+  holding ⌥. It attaches with `task_for_pid`, so macOS asks for a password to
+  authorize it when the game starts.
+- **None (Stock Rosetta)**, in the same submenu: no hook at all, so the client's
+  x87 code is translated by Rosetta as Apple ships it — slower, but useful for
+  telling a hook's bug from the game's own.
+
+The choice is remembered and takes effect on the next launch — the game's, and
+that of winecfg or cmd.exe opened from the menu. Installing always uses
+x87sidecar. The launcher sets only the chosen hook's variable
+(`X87_SIDECAR_PATH` or `ROSETTA_X87_PATH`) and clears the other — both, when
+there is no hook — since the loader tries the sidecar first.
+
+rosettax87_jit is two files that must sit side by side — `runtime_loader` and
+the `libRuntimeRosettax87` it injects — kept in `Resources/rosettax87_jit/` and
+copied from WoWSilicon's bundle, with their hashes in
+`Packaging/RosettaX87JIT/rosettax87_jit-lock.json`. `build.sh` copies them into
+the app without re-signing them, so the loader keeps the debugger entitlement
+its own signature carries.
 
 ## Command-key game shortcuts
 
@@ -144,6 +210,77 @@ Command+A/C/V/X/Z in-game. Also check that turning the option off persists after
 restarting the launcher, repairing, or reinstalling the client. Game input needs
 manual verification; a successful registry write alone does not prove it.
 
+## Function keys
+
+The client reads F1–F12 as its hotkey bars, but a Mac left as it comes sends
+brightness, volume and the rest from that row instead — so every skill key does
+something other than the skill. Flipping the Mac's own setting works, and it
+stays flipped: the media keys are then gone from every other app until it is
+flipped back.
+
+**Use F1–F12 as Function Keys in Game** is in the `…` menu without holding
+Option. It borrows that setting instead: the top row sends F1–F12 for as long
+as a client is open, and goes back to whatever it was the moment the last one
+closes. Hold `fn` for brightness and volume while the game runs. It is **off**
+by default — the setting is one for the whole Mac, not just the game, so it is
+not one to take without being asked — and the choice is remembered between
+launcher sessions (`functionKeys` in the launcher's preferences). Turning it on
+or off mid-game lands right away.
+
+The setting is `IOHIDSystem`'s `HIDFKeyMode` parameter, reached the way
+[Fluor](https://github.com/Pyroh/Fluor) reaches it — its `FKeyManager`, in turn
+derived from `fntoggle`. Neither reading nor writing it needs any privilege:
+the parameter connection is one macOS hands to whoever asks, which is how
+System Settings' own checkbox gets there. Nothing is installed for this — no
+helper, no login item, no accessibility or input-monitoring permission.
+
+What the launcher borrows it remembers, and it never borrows what it cannot
+give back:
+
+- A Mac already on standard function keys is left alone, and nothing is put
+  back afterwards — it was never changed.
+- A mode that cannot be read, or that is not one of the two the launcher knows,
+  is not touched at all: a value it has no case for is one it cannot promise to
+  restore.
+- Two clients at once share one borrow. The mode restored is the one from
+  before the first of them, and the last to close is what restores it.
+- Quitting the launcher mid-game restores it on the way out, synchronously,
+  before the process goes.
+
+The write is live only, which is the floor under all of that: macOS keeps the
+reader's own choice in `com.apple.keyboard.fnState`, and setting the HID
+parameter does not touch it. A launcher killed outright, with no chance to put
+anything back, still loses to the next login — and **System Settings › Keyboard**
+puts it right at any time.
+
+## Discord
+
+While a game runs, the Discord app shows it as **Playing Ragnarok Online**, with
+the time since the first client started. Discord cannot see that for itself: it
+recognizes games by their executable, and to macOS the client is a process
+called `wine`. So the launcher tells it, over the local socket the Discord app
+opens for programs on the same Mac (`discord-ipc-0` in `$TMPDIR`) — the one
+every game with Rich Presence talks to. The launcher sends nothing over the
+network, and the activity carries the game and the time played, not the
+profile's name.
+
+It uses Discord's own application for the game, `498990766643740692` — the one
+Discord detects `Ragexe.exe` as on Windows — so the name and icon are the ones
+Discord already has for Ragnarok Online, and there is nothing to register.
+
+**Show Game Activity in Discord** is in the `…` menu without holding Option. It
+is on by default, remembered between launcher sessions (`discordPresence` in
+the launcher's preferences), and takes effect at once, a game already running
+included. Who sees the activity is up to Discord's own Activity Privacy
+settings.
+
+Discord need not be open first. The launcher looks for it every 15 seconds while
+the game runs, and finds it again if it is quit and reopened. It says nothing in
+the log while Discord is away; it logs once when the activity is shown, and once
+if Discord refuses it, after which it stops asking until the next game.
+Presence ends when the last client closes: closing the connection is what
+clears it, so a launcher that quits takes it down too.
+
 ## The wintrust patch
 
 The client's copy-protection component calls `WinVerifyTrust` on
@@ -151,23 +288,23 @@ The client's copy-protection component calls `WinVerifyTrust` on
 reimplementation, so the call fails with
 `TRUST_E_NOSIGNATURE` and the client aborts — a false positive by construction,
 since Wine's DLLs can never carry a Microsoft signature.
-[WintrustPatch.swift](Sources/ROSilicon/WintrustPatch.swift) rewrites the
-first bytes of the exported `WinVerifyTrust` and `WinVerifyTrustEx` to
-`return 0`, keeping the original beside each file as `wintrust.dll.wine-orig`.
+[0014-wintrust-trust-every-file.patch](Packaging/WineRuntime/patches/0014-wintrust-trust-every-file.patch)
+makes Wine's `WinVerifyTrust` return `ERROR_SUCCESS` for every file, and
+`WinVerifyTrustEx` with it, since it calls through `WinVerifyTrust`.
 
-`build.sh` applies it once, to the runtime it bundles, through the launcher's
-own `--patch-wintrust` flag — so the app ships patched and the launcher never
-patches anything. This Wine copies its DLLs into each prefix rather than
-symlinking them, and loads the prefix's copy in preference to the runtime's, so
-a prefix created from that runtime is born patched too. The launcher neither
-applies nor reports it — there is nothing for it to decide. The way back is to
-rebuild the app from the untouched tree in `.wine-runtime`, or to put the
-`wintrust.dll.wine-orig` kept beside each patched DLL back by hand.
+It is one of the runtime's patches, built into `wintrust.dll` from source, so
+nothing is patched after the fact: not by `build.sh`, and never by the
+launcher. This Wine copies its DLLs into each prefix rather than symlinking
+them, and loads the prefix's copy in preference to the runtime's, so a prefix
+created from that runtime is born with it too. The launcher neither applies nor
+reports it — there is nothing for it to decide.
 
 ## The Steam stub
 
 The client expects to find Steam running, so the app carries a small stand-in
-that launches the game and waits for it to exit. It lives in
+that launches the game and waits until no client is left running — every copy
+of it, not only the first, so each Play lasts as long as the whole session. It
+lives in
 [tools/steam-stub/](tools/steam-stub/) as the C source it is built from — there
 is no `.exe` checked into this repository.
 
@@ -195,6 +332,41 @@ a rebuild that changes nothing does not churn the binary the app ships.
 `STEAM_STUB` points somewhere other than `.steam-stub`, and `STEAM_STUB_CC`
 names a cross-compiler other than `i686-w64-mingw32-gcc`.
 
+## The Wine runtime
+
+`make runtime` builds it from source into `.wine-runtime`, which must not exist
+yet. It restores the runtime `artifact-lock.json` pins as the base, fetches the
+Wine commit `Packaging/WineRuntime/runtime-lock.json` pins, applies the patches
+beside it in order, builds, then assembles and validates the tree. It takes a
+few minutes, and leaves its working trees in `.build/wine-runtime`. It needs
+Apple Silicon with Rosetta 2, Xcode, and:
+
+```sh
+brew install bison mingw-w64 freetype gnutls xz
+```
+
+`make release-runtime` publishes that tree as this repository's GitHub release
+`wine-runtime-r<runtimeRevision>`, tagged at the commit checked out (which must
+be pushed), and pins it in `artifact-lock.json`. Committing that lock is what
+points `make restore`, and the next build, at it. A new runtime gets a new
+`runtimeRevision` in `runtime-lock.json` before it is built.
+
+Everything below the launcher is x86_64, but Homebrew stopped building Intel
+bottles in September 2026, so the runtime is built on Apple Silicon under
+Rosetta 2: Xcode's clang compiles the host side for x86_64 against headers from
+the arm64 Homebrew, and mingw-w64 compiles the Windows side as it would anywhere.
+Wine loads FreeType, GnuTLS and MoltenVK by name at run time, and configure
+learns those names by linking against x86_64 copies. Those copies, like the
+mtld3d and library overlays assembled into the tree, come from the runtime the
+lock pinned before, so each release is built on the last one; the first was
+built on WoWSilicon's r15. The runtime targets macOS 14, like the app.
+
+Wine's Mac driver titles its application menu — and the Hide and Quit items in
+it — after the `CFBundleName` of the Info.plist embedded in its loader.
+[0013-loader-name-the-app-rosilicon.patch](Packaging/WineRuntime/patches/0013-loader-name-the-app-rosilicon.patch)
+makes that ROSilicon (`com.rosilicon.wine`), and `validate.sh` refuses a tree
+without it. The process itself is still `wine` to macOS, as it always was.
+
 ## Languages
 
 The window, the log and the error messages are translated into **English**,
@@ -217,6 +389,7 @@ build.sh                 builds, assembles and signs the .app, packs the .dmg
 makeicon.swift           draws AppIcon.icns, no asset files needed
 Makefile                 names the builds; build.sh does the work
 Packaging/WineRuntime/   the runtime and artifact locks, and the Wine patches
+Packaging/RosettaX87JIT/ the hashes of the bundled rosettax87_jit
 tools/wine-runtime/      build, assemble, validate, package and restore the runtime
 tools/steam-stub/        the Steam stub's source, and the scripts around it
 .wine-runtime/           the Wine tree the app ships (gitignored, `make restore`)
@@ -224,22 +397,25 @@ tools/steam-stub/        the Steam stub's source, and the scripts around it
 Resources/
   d9vk/d3d9.dll          Direct3D 9 to Vulkan, bundled into the app
   x87sidecar/            the x87 hook, bundled into the app
+  rosettax87_jit/        the alternative x87 hook behind ⌥, bundled into the app
   Localizations/         en.lproj, pt-BR.lproj, es.lproj
 Sources/ROSilicon/
   Paths.swift            paths, the bundled runtime, the Wine environment
+  Profile.swift          the profiles: where each prefix lives, listing, naming
   Shell.swift            subprocesses with streamed output and cancellation
   Rosetta.swift          whether Rosetta 2 is installed on this Mac
   Downloader.swift       resumable ranged downloads, retries, md5
-  WintrustPatch.swift    the signature-check workaround
   Installer.swift        the install stages
   GameRunner.swift       the launch path
   GameKeyboardSettings.swift  the saved Command-shortcut choice and Wine setting
+  FunctionKeys.swift     the Mac's F1–F12 mode, borrowed while the game runs
   LaunchOptions.swift    WINEDEBUG and the extra variables, as typed
+  X87Backend.swift       the choice between the two x87 hooks
+  DiscordPresence.swift  the game's activity in the Discord app, over its local socket
   Status.swift           what is installed right now
   LauncherModel.swift    state and actions behind the window
   ContentView.swift      the window
-  LauncherApp.swift      the window's scene and menu commands
-  main.swift             the entry point, and the --patch-wintrust flag
+  LauncherApp.swift      the entry point: the window's scene and menu commands
   Strings.swift          every word the launcher shows
 ```
 
@@ -250,10 +426,25 @@ it. Both are useful when running outside an app bundle.
 ## Credits
 
 - **WoWSilicon** — [WoWSilicon/WoWSilicon](https://github.com/WoWSilicon/WoWSilicon)
-  — the Wine runtime and the Rosetta work behind it.
+  — the Wine patches and runtime tooling this one's is built with, the mtld3d
+  and library overlays it carries, and the Rosetta work behind it.
 - **x87sidecar** — [athei/x87sidecar](https://github.com/athei/x87sidecar) — the
   x87 hook the runtime re-execs into; the bundled binary is that project's
   release, tracked in `Packaging/X87Sidecar/x87sidecar-lock.json`. Built on
   [Lifeisawful/rosettax87_jit](https://github.com/Lifeisawful/rosettax87_jit).
+- **rosettax87_jit** — [Lifeisawful/rosettax87_jit](https://github.com/Lifeisawful/rosettax87_jit)
+  — the alternative x87 hook behind ⌥; the bundled binaries are WoWSilicon's,
+  tracked in `Packaging/RosettaX87JIT/rosettax87_jit-lock.json`.
+- **Fluor** — [Pyroh/Fluor](https://github.com/Pyroh/Fluor) — how the function
+  key mode is read and written, from its `FKeyManager` (MIT), which in turn
+  derives from `fntoggle`. No code is bundled; only the approach is borrowed.
 - **Wintrust patch** — [alexandrephz/ragnarok-no-linux](https://gitlab.com/alexandrephz/ragnarok-no-linux)
 - **D9VK** — [Sikarugir-App/d9vk](https://github.com/Sikarugir-App/d9vk)
+
+## License
+
+ROSilicon is free software, licensed under the
+[GNU General Public License v3.0](LICENSE) or, at your option, any later
+version. It comes with no warranty. The components it bundles — the Wine
+runtime, `x87sidecar`, `rosettax87_jit`, DXVK/D9VK — keep the licenses of their own projects,
+listed under [Credits](#credits).

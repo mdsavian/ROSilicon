@@ -1,95 +1,107 @@
 import Foundation
 
-struct Profile: Equatable, Identifiable, Sendable {
-    let id: String
-    let name: String
-    let root: URL
+enum ProfileError: LocalizedError, Equatable {
+    case nameEmpty
+    case nameInvalid
+    case nameTaken(String)
+    case defaultNotDeletable
+
+    var errorDescription: String? {
+        switch self {
+        case .nameEmpty: Strings.errorProfileNameEmpty
+        case .nameInvalid: Strings.errorProfileNameInvalid
+        case .nameTaken(let name): Strings.errorProfileNameTaken(name)
+        case .defaultNotDeletable: Strings.errorDefaultProfileNotDeletable
+        }
+    }
 }
 
-struct ProfileStore: Sendable {
-    enum Error: LocalizedError, Equatable {
-        case emptyName
-        case invalidName
-        case duplicate
-        case cannotModifyMain
+/// A Wine prefix of its own, with its own game client, registry and settings.
+///
+/// The default profile is `wine/`, the prefix every install had before there
+/// were profiles, so an existing install carries on untouched; it cannot be
+/// deleted. The rest sit side by side under `profiles/`, each in a folder named
+/// after it. That folder is all there is to one: no list is kept anywhere
+/// else, so the folders on disk are the profiles.
+enum Profile: Hashable, Sendable, Identifiable {
+    case `default`
+    case named(String)
 
-        var errorDescription: String? {
-            switch self {
-            case .emptyName: "Profile name cannot be empty."
-            case .invalidName: "Profile name must contain letters or numbers."
-            case .duplicate: "A profile with that name already exists."
-            case .cannotModifyMain: "The Main profile cannot be renamed or deleted."
-            }
+    /// The folder the additional profiles live in, under the install folder.
+    static let folderName = "profiles"
+
+    /// What the preferences remember: empty for the default profile, which no
+    /// name typed for a new one can ever be.
+    init(rawValue: String) { self = rawValue.isEmpty ? .default : .named(rawValue) }
+
+    var rawValue: String {
+        switch self {
+        case .default: ""
+        case .named(let name): name
         }
     }
 
-    let base: URL
+    var id: String { rawValue }
 
-    var profiles: [Profile] {
-        var result = [Profile(id: "main", name: "Main", root: base)]
-        let folder = base.appending(path: "profiles")
-        let entries = (try? FileManager.default.contentsOfDirectory(
-            at: folder, includingPropertiesForKeys: [.isDirectoryKey],
+    var displayName: String {
+        switch self {
+        case .default: Strings.profileDefault
+        case .named(let name): name
+        }
+    }
+
+    /// Only the profiles someone made can be deleted.
+    var isDeletable: Bool { self != .default }
+
+    /// Where its prefix sits, relative to the install folder.
+    var folder: String {
+        switch self {
+        case .default: "wine"
+        case .named(let name): Self.folderName + "/" + name
+        }
+    }
+
+    // MARK: - On disk
+
+    /// Every profile in the install at `root`: the default first, then the
+    /// folders under `profiles/` in Finder order. A folder is a profile from
+    /// the moment it exists, prefix or not — creating one makes only the
+    /// folder, and Install does the rest.
+    static func all(in root: URL) -> [Profile] {
+        let contents = (try? FileManager.default.contentsOfDirectory(
+            at: root.appending(path: folderName), includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles])) ?? []
-        for entry in entries.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
-            guard (try? entry.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true,
-                  let name = try? String(contentsOf: entry.appending(path: ".profile-name"),
-                                         encoding: .utf8),
-                  !name.isEmpty
-            else { continue }
-            result.append(Profile(id: entry.lastPathComponent, name: name, root: entry))
-        }
-        return result
+        let names = contents
+            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+            .map(\.lastPathComponent)
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        return [.default] + names.map(Profile.named)
     }
 
-    @discardableResult
-    func create(name: String) throws -> Profile {
+    /// The name as it will be used, trimmed, or why it cannot be. It becomes a
+    /// folder name, so it may not reach outside `profiles/` or hide itself, and
+    /// it has to differ from every existing profile's in more than case — the
+    /// file system usually does not tell the two apart, and neither would
+    /// someone reading the menu.
+    static func validatedName(_ name: String, existing: [Profile]) throws -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { throw Error.emptyName }
-        let id = Self.slug(trimmed)
-        guard !id.isEmpty else { throw Error.invalidName }
-        guard !profiles.contains(where: { $0.id == id }) else { throw Error.duplicate }
-
-        let root = base.appending(path: "profiles/\(id)")
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        try Data(trimmed.utf8).write(to: root.appending(path: ".profile-name"), options: .atomic)
-        return Profile(id: id, name: trimmed, root: root)
-    }
-
-    @discardableResult
-    func rename(_ profile: Profile, to name: String) throws -> Profile {
-        guard profile.id != "main" else { throw Error.cannotModifyMain }
-        guard profiles.contains(where: {
-            $0.id == profile.id && $0.root.standardizedFileURL == profile.root.standardizedFileURL
-        }) else { throw Error.invalidName }
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { throw Error.emptyName }
-        let id = Self.slug(trimmed)
-        guard !id.isEmpty else { throw Error.invalidName }
-        guard !profiles.contains(where: { $0.id != profile.id && $0.id == id }) else {
-            throw Error.duplicate
+        guard !trimmed.isEmpty else { throw ProfileError.nameEmpty }
+        guard !trimmed.hasPrefix("."), !trimmed.contains("/"), !trimmed.contains(":")
+        else { throw ProfileError.nameInvalid }
+        if let clash = existing.first(where: {
+            $0.displayName.caseInsensitiveCompare(trimmed) == .orderedSame
+        }) {
+            throw ProfileError.nameTaken(clash.displayName)
         }
-        let renamed = Profile(id: profile.id, name: trimmed, root: profile.root)
-        try Data(trimmed.utf8).write(
-            to: profile.root.appending(path: ".profile-name"), options: .atomic)
-        return renamed
+        return trimmed
     }
 
-    @discardableResult
-    func delete(_ profile: Profile) throws -> URL? {
-        guard profile.id != "main" else { throw Error.cannotModifyMain }
-        guard let stored = profiles.first(where: {
-            $0.id == profile.id && $0.root.standardizedFileURL == profile.root.standardizedFileURL
-        }) else { return nil }
-        guard FileManager.default.fileExists(atPath: stored.root.path) else { return nil }
-        var trashed: NSURL?
-        try FileManager.default.trashItem(at: stored.root, resultingItemURL: &trashed)
-        return trashed as URL?
-    }
-
-    private static func slug(_ name: String) -> String {
-        name.lowercased()
-            .replacingOccurrences(of: "[^a-z0-9]+", with: "-", options: .regularExpression)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+    /// Makes a new profile's folder and hands the profile back. Its prefix is
+    /// left for Install to boot, like the default one on a fresh install.
+    static func create(named name: String, in root: URL) throws -> Profile {
+        let profile = Profile.named(try validatedName(name, existing: all(in: root)))
+        try FileManager.default.createDirectory(
+            at: Paths(root: root, profile: profile).prefix, withIntermediateDirectories: true)
+        return profile
     }
 }

@@ -3,6 +3,7 @@
 /* Ventana y botones */
 "app.title" = "ROSilicon";
 "button.play" = "Jugar";
+"button.starting" = "Iniciando…";
 "button.install" = "Instalar";
 "button.repair" = "Reparar";
 "button.cancel" = "Cancelar";
@@ -21,8 +22,16 @@
 "menu.reinstall_client" = "Reinstalar el cliente del juego…";
 "menu.client_url" = "URL del cliente…";
 "menu.metal_hud" = "Mostrar el medidor de FPS de Metal";
+"menu.x87_backend" = "Traducción x87";
+"menu.x87_backend.sidecar" = "x87sidecar (por omisión)";
+"menu.x87_backend.rosettax87_jit" = "rosettax87_jit (pide tu contraseña)";
+"menu.x87_backend.disabled" = "Ninguna (Rosetta estándar)";
 "menu.command_shortcuts" = "Usar ⌘ para los atajos del juego";
 "help.command_shortcuts" = "Envía ⌘A/C/V/X/Z al juego como atajos con Alt en lugar de comandos de edición del Mac. Usa Control para editar texto. Se aplica al volver a iniciar el juego; desactívalo para restaurar los comandos de edición del Mac.";
+"menu.function_keys" = "Usar F1–F12 como teclas de función en el juego";
+"help.function_keys" = "Mientras el juego está abierto, la fila superior envía F1–F12 para las barras de atajos en lugar del brillo, el volumen y lo demás; mantén fn para esos. Es el mismo ajuste de todo el Mac que hay en Ajustes del Sistema, tomado prestado mientras haya un cliente abierto y devuelto en cuanto se cierra el último.";
+"menu.discord_presence" = "Mostrar la actividad del juego en Discord";
+"help.discord_presence" = "Mientras el juego está abierto, la app de Discord muestra que estás jugando a Ragnarok Online y desde hace cuánto. Necesita la app de Discord abierta en este Mac; quién lo ve depende de los ajustes de Privacidad de la actividad de Discord. Se aplica al instante.";
 "menu.wine_debug" = "Canales de depuración de Wine (WINEDEBUG)…";
 "menu.environment" = "Variables de entorno adicionales…";
 "menu.winecfg" = "Abrir la configuración de Wine (winecfg)";
@@ -40,8 +49,8 @@
 "dialog.quit.message" = "Esto apaga todo lo que corre en el prefijo de Wine. El progreso sin guardar se pierde.";
 "dialog.clear.title" = "¿Mover la instalación a la Papelera?";
 "dialog.clear.confirm" = "Mover a la Papelera";
-"dialog.clear.message" = "Todo lo que hay en %1$@ (%2$@) va a la Papelera: la compilación de Wine, el prefijo, el cliente del juego y su configuración. Instalar de nuevo lo descarga todo otra vez.";
-"dialog.clear.message_no_size" = "Todo lo que hay en %@ va a la Papelera: la compilación de Wine, el prefijo, el cliente del juego y su configuración. Instalar de nuevo lo descarga todo otra vez.";
+"dialog.clear.message" = "Todo lo que hay en %1$@ (%2$@) va a la Papelera: todos los perfiles, incluido el predeterminado, con su prefijo de Wine, su cliente del juego y su configuración. Instalar de nuevo lo descarga todo otra vez.";
+"dialog.clear.message_no_size" = "Todo lo que hay en %@ va a la Papelera: todos los perfiles, incluido el predeterminado, con su prefijo de Wine, su cliente del juego y su configuración. Instalar de nuevo lo descarga todo otra vez.";
 
 /* Paneles */
 "sheet.client_url.title" = "URL de descarga del cliente";
@@ -64,6 +73,27 @@
 "dialog.profile_delete.title" = "¿Eliminar perfil?";
 "dialog.profile_delete.confirm" = "Eliminar perfil";
 "dialog.profile_delete.message" = "La instalación de %@ se moverá a la Papelera. Los otros perfiles no se verán afectados.";
+
+/* Perfiles */
+"profile.default" = "Predeterminado";
+"menu.profile" = "Perfil";
+"help.profile" = "Cada perfil es un prefijo de Wine propio, con su propio cliente del juego y su configuración. Cambia de perfil cuando no haya nada instalándose ni en ejecución.";
+"menu.new_profile" = "Nuevo perfil…";
+"menu.delete_profile" = "Eliminar el perfil “%@”…";
+"sheet.new_profile.title" = "Nuevo perfil";
+"sheet.new_profile.explanation" = "Un perfil es un prefijo de Wine propio, guardado en la carpeta profiles, con su propio cliente del juego y su configuración. Después de crearlo, pulsa Instalar para prepararlo.";
+"sheet.new_profile.field" = "Nombre";
+"sheet.new_profile.create" = "Crear";
+"dialog.delete_profile.title" = "¿Mover el perfil “%@” a la Papelera?";
+"dialog.delete_profile.confirm" = "Mover a la Papelera";
+"dialog.delete_profile.message" = "Todo lo que hay en %1$@ (%2$@) va a la Papelera: el prefijo de Wine del perfil, su cliente del juego y su configuración. Los demás perfiles quedan como están.";
+"dialog.delete_profile.message_no_size" = "Todo lo que hay en %@ va a la Papelera: el prefijo de Wine del perfil, su cliente del juego y su configuración. Los demás perfiles quedan como están.";
+"step.removing_profile" = "Quitando el perfil %@";
+"step.profile_removed" = "Perfil %@ eliminado";
+"error.profile_name_empty" = "Ponle un nombre al perfil";
+"error.profile_name_invalid" = "El nombre de un perfil no puede empezar con un punto ni contener / o :";
+"error.profile_name_taken" = "Ya hay un perfil llamado %@";
+"error.default_profile_not_deletable" = "El perfil predeterminado no se puede eliminar";
 
 /* Lista de comprobación */
 "item.rosetta" = "Rosetta 2";
@@ -128,16 +158,22 @@
 "log.removed" = "(eliminado)";
 "log.launching" = "Iniciando el cliente…";
 "log.metal_hud" = "Medidor de FPS de Metal activado.";
+"log.rosettax87_jit" = "El código x87 corre con rosettax87_jit — macOS pide tu contraseña para dejar que se conecte al juego.";
+"log.x87_disabled" = "Sin traducción x87 acelerada: el código x87 del cliente corre con el Rosetta estándar, más lento.";
 "log.command_shortcuts_on" = "Atajos del juego con Command activados: menú Edición del Mac desactivado para Ragexe.exe.";
 "log.command_shortcuts_off" = "Atajos del juego con Command desactivados: comandos de edición del Mac restaurados para Ragexe.exe.";
+"log.function_keys_standard" = "Teclas de función: F1–F12 para el juego, se restaurarán al cerrarlo";
+"log.function_keys_restored" = "Teclas de función: de vuelta al ajuste propio del Mac";
+"log.function_keys_not_restored" = "Teclas de función: no se pudieron restaurar — revisa Ajustes del Sistema › Teclado";
+"log.function_keys_unavailable" = "Teclas de función: este Mac no permitió cambiar el ajuste, se deja como está";
+"log.discord_presence" = "Discord muestra Ragnarok Online como tu actividad.";
+"log.discord_presence_refused" = "Discord rechazó la actividad del juego: %@";
 "log.wine_debug" = "WINEDEBUG=%@";
 "log.extra_environment" = "Entorno adicional: %@";
 "log.opening_tool" = "Abriendo %@…";
 "log.tool_exited" = "%1$@ terminó con el estado %2$d.";
 "log.exited_normally" = "El juego se cerró con normalidad.";
 "log.unknown_size" = "tamaño desconocido";
-
-/* Parche de wintrust */
 
 /* Errores */
 "error.prefix" = "error: ";

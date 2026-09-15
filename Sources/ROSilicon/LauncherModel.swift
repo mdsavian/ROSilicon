@@ -10,16 +10,29 @@ final class LauncherModel: ObservableObject {
         case running
 
         var isBusy: Bool { self != .idle }
+        /// Another client can start beside a running one: only an install or
+        /// a clear holds Play back.
+        var allowsPlay: Bool { self != .working }
+        /// Selecting another profile is safe while a client is running because
+        /// each profile owns a separate Wine prefix.
+        var allowsProfileSelection: Bool { self != .working }
     }
 
     @Published private(set) var paths: Paths
-    @Published private(set) var profiles: [Profile]
-    @Published private(set) var selectedProfile: Profile
+    /// Every profile on disk, the default first. Re-read on every refresh, so
+    /// one made or removed in the Finder shows up too.
+    @Published private(set) var profiles: [Profile] = [.default]
     @Published private(set) var status = Status()
     @Published private(set) var phase: Phase = .idle
+    /// True for a few seconds after Play is pressed, while that client is on
+    /// its way: a double click — or a held Return — must not open two.
+    @Published private(set) var isStarting = false
     @Published private(set) var step = ""
     @Published private(set) var progress: DownloadProgress?
     @Published private(set) var log: [LogLine] = []
+    /// Keeps a durable copy of each launcher's session log under the active
+    /// profile, including output that remains useful after a crash.
+    private var sessionLog: SessionLog
     @Published var failure: String?
     @Published var clientURLText = Paths.defaultClientURL.absoluteString
     /// Metal's frame-rate overlay, remembered between launches so someone
@@ -27,12 +40,30 @@ final class LauncherModel: ObservableObject {
     @Published var metalHUD = UserDefaults.standard.bool(forKey: LauncherModel.metalHUDKey) {
         didSet { UserDefaults.standard.set(metalHUD, forKey: Self.metalHUDKey) }
     }
+    /// The x87 hook the game runs under, from the ⌥ menu. Remembered like the
+    /// overlay; takes effect on the next launch.
+    @Published var x87Backend = X87Backend(
+        rawValue: UserDefaults.standard.string(forKey: LauncherModel.x87BackendKey) ?? ""
+    ) ?? .default {
+        didSet { UserDefaults.standard.set(x87Backend.rawValue, forKey: Self.x87BackendKey) }
+    }
     /// Saved immediately, applied on the next Install/Repair or Play. Changing
     /// a preference must not start Wine or initialize a prefix on its own.
     @Published var commandShortcuts = GameKeyboardSettings.load(
         from: .standard).commandShortcuts {
         didSet {
             GameKeyboardSettings(commandShortcuts: commandShortcuts).save(to: .standard)
+        }
+    }
+    /// Holds the Mac's top row on F1–F12 while a client is open, for the
+    /// game's hotkey bars. Off unless asked for: it is a setting for the whole
+    /// Mac, not just the game, so it is not one to take without being told to.
+    /// Turning it off mid-game puts the keyboard back at once.
+    @Published var functionKeys = UserDefaults.standard.bool(
+        forKey: LauncherModel.functionKeysKey) {
+        didSet {
+            UserDefaults.standard.set(functionKeys, forKey: Self.functionKeysKey)
+            updateFunctionKeys()
         }
     }
     /// Wine's debug channels, as typed. Remembered between launches like the
@@ -48,14 +79,39 @@ final class LauncherModel: ObservableObject {
         forKey: LauncherModel.extraEnvironmentKey) ?? "" {
         didSet { UserDefaults.standard.set(extraEnvironmentText, forKey: Self.extraEnvironmentKey) }
     }
+    /// Shows the game in the Discord app while a client runs. On unless
+    /// someone turned it off — who sees it is up to Discord's own settings —
+    /// and it takes effect at once, a game already running included.
+    @Published var discordPresence = UserDefaults.standard.object(
+        forKey: LauncherModel.discordPresenceKey) as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(discordPresence, forKey: Self.discordPresenceKey)
+            updatePresence()
+        }
+    }
 
+    /// An install or a clear.
     private var job: Task<Void, Never>?
-    private var sessionLog: SessionLog
+    /// One per Play still waiting on its steam.exe. Every stub waits for the
+    /// last client in the prefix to close, so these end together, and the
+    /// launcher is running for as long as any is left.
+    private var games: [UUID: Task<Void, Never>] = [:]
+    /// When the first of the clients still running was started: what Discord
+    /// counts the time played from. Nil while no game runs.
+    private var sessionStart: Date?
+    private let presence = DiscordPresence()
+    private let functionKeyOverride = FunctionKeyOverride()
+    /// Ends the hold on Play once `playHoldDuration` has passed.
+    private var playHold: Task<Void, Never>?
+    private static let playHoldDuration: Duration = .seconds(5)
     private static let logLimit = 5_000
     private static let metalHUDKey = "metalHUD"
+    private static let x87BackendKey = "x87Backend"
     private static let wineDebugKey = "wineDebug"
     private static let extraEnvironmentKey = "extraEnvironment"
-    private static let selectedProfileKey = "selectedProfile"
+    private static let profileKey = "profile"
+    private static let discordPresenceKey = "discordPresence"
+    private static let functionKeysKey = "functionKeys"
 
     struct LogLine: Identifiable, Sendable {
         /// What the line is, so the view can colour it without matching on
@@ -68,76 +124,44 @@ final class LauncherModel: ObservableObject {
     }
 
     init() {
-        let store = ProfileStore(base: Paths.applicationSupportRoot.appending(path: "ROSilicon"))
-        let listed = store.profiles
-        let selectedID = UserDefaults.standard.string(forKey: Self.selectedProfileKey) ?? "main"
-        let environmentRoot = Paths.installRoot.standardizedFileURL
-        let selected = listed.first(where: {
-            $0.id == selectedID && $0.root.standardizedFileURL == environmentRoot
-        }) ?? listed.first(where: { $0.root.standardizedFileURL == environmentRoot })
-            ?? Profile(id: "environment", name: "Environment", root: environmentRoot)
-        profiles = listed.contains(selected) ? listed : [selected] + listed
-        selectedProfile = selected
-        paths = Paths(root: selected.root)
-        sessionLog = SessionLog(root: selected.root)
+        let initialPaths = Paths.locateRoot(profile: Profile(
+            rawValue: UserDefaults.standard.string(forKey: Self.profileKey) ?? ""))
+        paths = initialPaths
+        sessionLog = SessionLog(root: initialPaths.root)
         refresh()
-        append("Session started for profile: \(selected.name)")
-        append("Install root: \(selected.root.path)")
+        append("Session started for profile: \(profile.displayName)")
+        append("Install root: \(paths.root.path)")
     }
 
     var installFolder: URL { paths.root }
-
-    func selectProfile(_ profile: Profile) {
-        guard !phase.isBusy else { return }
-        selectedProfile = profile
-        paths = Paths(root: profile.root)
-        sessionLog = SessionLog(root: profile.root)
-        UserDefaults.standard.set(profile.id, forKey: Self.selectedProfileKey)
-        refresh()
-        append("Session started for profile: \(profile.name)")
-        append("Install root: \(profile.root.path)")
-    }
-
-    func createProfile(name: String) throws {
-        guard !phase.isBusy else { return }
-        let store = ProfileStore(base: Paths.applicationSupportRoot.appending(path: "ROSilicon"))
-        let profile = try store.create(name: name)
-        profiles = store.profiles
-        selectProfile(profile)
-    }
-
-    func renameProfile(_ profile: Profile, name: String) throws {
-        guard !phase.isBusy else { return }
-        let store = ProfileStore(base: Paths.applicationSupportRoot.appending(path: "ROSilicon"))
-        let renamed = try store.rename(profile, to: name)
-        profiles = store.profiles
-        if selectedProfile.id == profile.id {
-            selectedProfile = renamed
-        }
-    }
-
-    func deleteProfile(_ profile: Profile) throws {
-        guard !phase.isBusy else { return }
-        let store = ProfileStore(base: Paths.applicationSupportRoot.appending(path: "ROSilicon"))
-        _ = try store.delete(profile)
-        profiles = store.profiles
-        if selectedProfile.id == profile.id {
-            selectProfile(profiles[0])
-        }
-    }
+    var profile: Profile { paths.profile }
+    var profileFolder: URL { paths.prefix }
 
     // MARK: - State
 
+    /// Re-reads the profiles and the checklist. A profile gone from under the
+    /// launcher — deleted here, cleared with the rest of the install, or moved
+    /// away in the Finder — falls back to the default one.
     func refresh() {
         guard !phase.isBusy else { return }
-        let paths = self.paths
+        let root = paths.root
+        let wanted = paths.profile
         Task {
-            let fresh = await Task.detached { Status.inspect(paths) }.value
+            let (profiles, profile, fresh) = await Task.detached {
+                () -> ([Profile], Profile, Status) in
+                let profiles = Profile.all(in: root)
+                let profile = profiles.contains(wanted) ? wanted : .default
+                return (profiles, profile, Status.inspect(Paths(root: root, profile: profile)))
+            }.value
+            // Another profile was chosen meanwhile, and its own refresh has the say.
+            guard self.paths.profile == wanted else { return }
+            self.profiles = profiles
+            if profile != wanted { use(profile) }
             self.status = fresh
         }
     }
 
-    var canPlay: Bool { status.canPlay && !phase.isBusy }
+    var canPlay: Bool { status.canPlay && phase.allowsPlay && !isStarting }
     var needsInstall: Bool { !status.canPlay }
 
     /// What the ⌥ menu's environment settings come to, read at the moment a
@@ -202,18 +226,26 @@ final class LauncherModel: ObservableObject {
         }
     }
 
+    /// Starts a client, beside any already running: each one is a window of
+    /// its own in the same prefix, started with the settings of the moment.
     func play() {
         guard canPlay else { return }
-        let paths = self.paths
-        let hud = metalHUD
-        let options = launchOptions
-        let keyboard = GameKeyboardSettings(commandShortcuts: commandShortcuts)
-        start(.running) { [reporter] in
-            try await GameRunner(
-                paths: paths, reporter: reporter, metalHUD: hud, options: options,
-                keyboard: keyboard
-            ).play()
+        let runner = GameRunner(
+            paths: paths, reporter: reporter, metalHUD: metalHUD, options: launchOptions,
+            keyboard: GameKeyboardSettings(commandShortcuts: commandShortcuts), x87: x87Backend)
+        let id = UUID()
+        if games.isEmpty {
+            failure = nil
+            sessionStart = .now
         }
+        phase = .running
+        holdPlay()
+        games[id] = Task { [weak self] in
+            let outcome = await Outcome.of { try await runner.play() }
+            self?.gameEnded(id, outcome)
+        }
+        updatePresence()
+        updateFunctionKeys()
     }
 
     /// Opens winecfg or a cmd.exe window against the prefix.
@@ -227,9 +259,10 @@ final class LauncherModel: ObservableObject {
         let paths = self.paths
         let reporter = self.reporter
         let options = launchOptions
+        let x87 = x87Backend
         Task {
             do {
-                try await GameRunner(paths: paths, reporter: reporter, options: options)
+                try await GameRunner(paths: paths, reporter: reporter, options: options, x87: x87)
                     .open(tool)
             } catch {
                 append(Strings.errorPrefix + error.localizedDescription, kind: .failure)
@@ -253,8 +286,13 @@ final class LauncherModel: ObservableObject {
     }
 
     /// What the install takes up on disk, for the confirmation dialog.
-    var installedSizeText: String? {
-        guard let bytes = status.installedSize, bytes > 0 else { return nil }
+    var installedSizeText: String? { Self.sizeText(status.installedSize) }
+
+    /// What the profile's prefix takes up, for the one before deleting it.
+    var profileSizeText: String? { Self.sizeText(status.profileSize) }
+
+    private static func sizeText(_ bytes: Int64?) -> String? {
+        guard let bytes, bytes > 0 else { return nil }
         return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 
@@ -267,14 +305,14 @@ final class LauncherModel: ObservableObject {
         job?.cancel()
     }
 
-    /// Stops a running game: wineserver -k takes the whole prefix down, so a
-    /// client that stopped responding does not linger.
+    /// Stops every running client: wineserver -k takes the whole prefix down,
+    /// so one that stopped responding does not linger.
     func quitGame() {
         guard phase == .running else { return }
         let paths = self.paths
         Task {
             await GameRunner(paths: paths, reporter: reporter).quit()
-            job?.cancel()
+            for game in games.values { game.cancel() }
         }
     }
 
@@ -282,19 +320,77 @@ final class LauncherModel: ObservableObject {
         failure = nil
         self.phase = phase
         job = Task { [weak self] in
+            let outcome = await Outcome.of(work)
+            self?.finish(with: outcome.failure)
+        }
+    }
+
+    /// The launcher stays running while another game's job is left. A launch
+    /// that failed says so in the log there and then, so a second client that
+    /// would not start does not go unnoticed beside the first. A cancellation
+    /// does not: only Quit Game causes one, it reaches every job at once, and
+    /// the last one to end reports it.
+    private func gameEnded(_ id: UUID, _ outcome: Outcome) {
+        games[id] = nil
+        releasePlay()
+        guard games.isEmpty else {
+            if case .failed(let failure) = outcome {
+                append(Strings.errorPrefix + failure, kind: .failure)
+            }
+            return
+        }
+        sessionStart = nil
+        updatePresence()
+        updateFunctionKeys()
+        finish(with: outcome.failure)
+    }
+
+    /// Holds Play back for a few seconds, which covers a double click and the
+    /// first moments of the launch. It is a guard against a slip, not a lock:
+    /// pressing again afterwards opens another client, as it should.
+    private func holdPlay() {
+        isStarting = true
+        playHold?.cancel()
+        playHold = Task { [weak self] in
+            do { try await Task.sleep(for: Self.playHoldDuration) } catch { return }
+            self?.isStarting = false
+        }
+    }
+
+    /// A game's job ending — one that would not start, or the whole session —
+    /// leaves nothing to guard, and someone retrying should not have to wait.
+    private func releasePlay() {
+        playHold?.cancel()
+        playHold = nil
+        isStarting = false
+    }
+
+    /// How a job ended.
+    private enum Outcome {
+        case finished
+        case cancelled
+        case failed(String)
+
+        static func of(_ work: @Sendable () async throws -> Void) async -> Outcome {
             do {
                 try await work()
             } catch is CancellationError {
-                self?.finish(with: Strings.cancelled)
-                return
+                return .cancelled
             } catch let error as URLError where error.code == .cancelled {
-                self?.finish(with: Strings.cancelled)
-                return
+                return .cancelled
             } catch {
-                self?.finish(with: error.localizedDescription)
-                return
+                return .failed(error.localizedDescription)
             }
-            self?.finish(with: nil)
+            return .finished
+        }
+
+        /// What the status line says afterwards; nil when all went well.
+        var failure: String? {
+            switch self {
+            case .finished: nil
+            case .cancelled: Strings.cancelled
+            case .failed(let failure): failure
+            }
         }
     }
 
@@ -308,6 +404,86 @@ final class LauncherModel: ObservableObject {
             step = failure
         }
         refresh()
+    }
+
+    // MARK: - Discord
+
+    /// Shows the game in Discord while a client runs and the choice is on,
+    /// and takes it down otherwise. Called whenever either changes; showing
+    /// what is already shown is a no-op, so the session keeps its start time.
+    private func updatePresence() {
+        if discordPresence, let sessionStart {
+            presence.show(since: sessionStart, reporter: reporter)
+        } else {
+            presence.clear()
+        }
+    }
+
+    // MARK: - Function keys
+
+    /// Borrows the Mac's function key mode while a client is open and the
+    /// choice is on, and gives it back otherwise. Called whenever either
+    /// changes, so switching the toggle mid-game lands right away; both
+    /// directions are no-ops when there is nothing to do.
+    private func updateFunctionKeys() {
+        if functionKeys, sessionStart != nil {
+            functionKeyOverride.engage(.standard, reporter: reporter)
+        } else {
+            functionKeyOverride.release(reporter: reporter)
+        }
+    }
+
+    // MARK: - Profiles
+
+    /// Switches the window to another profile. An install remains exclusive,
+    /// but a game may keep running while another profile is selected because
+    /// every profile has its own prefix.
+    func selectProfile(_ profile: Profile) {
+        guard phase != .working, profile != paths.profile else { return }
+        failure = nil
+        use(profile)
+        sessionLog = SessionLog(root: paths.root)
+        append("Session started for profile: \(profile.displayName)")
+        append("Install root: \(paths.root.path)")
+        refresh()
+    }
+
+    /// Makes a profile's folder and switches to it, for Install to set up
+    /// from there. Throws when the name will not do.
+    func createProfile(named name: String) throws {
+        guard !phase.isBusy else { return }
+        let profile = try Profile.create(named: name, in: paths.root)
+        profiles = Profile.all(in: paths.root)
+        selectProfile(profile)
+    }
+
+    /// Why `name` cannot be a new profile's, or nil when it can. Checked
+    /// against the profiles already listed, so it can run on every keystroke.
+    func profileNameProblem(_ name: String) -> String? {
+        do {
+            _ = try Profile.validatedName(name, existing: profiles)
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    /// Moves the current profile to the Trash; the refresh once it is done
+    /// finds it gone and switches to the default one. Only offered behind a
+    /// confirmation, never for the default profile, and refused while Wine
+    /// is running.
+    func deleteProfile() {
+        guard !phase.isBusy, paths.profile.isDeletable else { return }
+        let paths = self.paths
+        start(.working) { [reporter] in
+            try await Installer(paths: paths, reporter: reporter).deleteProfile()
+        }
+    }
+
+    /// Points everything at `profile`, and remembers it for the next launch.
+    private func use(_ profile: Profile) {
+        paths = Paths(root: paths.root, profile: profile)
+        UserDefaults.standard.set(profile.rawValue, forKey: Self.profileKey)
     }
 
     // MARK: - Folders

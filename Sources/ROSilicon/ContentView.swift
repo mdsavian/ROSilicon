@@ -7,17 +7,15 @@ struct ContentView: View {
     @State private var confirmReinstall = false
     @State private var confirmQuit = false
     @State private var confirmClear = false
-    @State private var editor: Editor?
-    @State private var showNewProfile = false
-    @State private var newProfileName = ""
-    @State private var profileError: String?
-    @State private var editingProfile: Profile?
-    @State private var profileToDelete: Profile?
     @State private var confirmDeleteProfile = false
+    @State private var editor: Editor?
+    @State private var newProfileName = ""
+    @State private var newProfileError: String?
 
-    /// The text settings behind ⌥, each shown in a sheet of the same shape.
+    /// The sheets: the text settings behind ⌥, each of the same shape, and
+    /// the name of a new profile.
     private enum Editor: String, Identifiable {
-        case clientURL, wineDebug, environment
+        case clientURL, wineDebug, environment, newProfile
 
         var id: String { rawValue }
     }
@@ -62,22 +60,16 @@ struct ContentView: View {
         } message: {
             Text(clearMessage)
         }
-        .sheet(item: $editor) { sheet(for: $0) }
-        .sheet(isPresented: $showNewProfile) { newProfileSheet }
-        .sheet(item: $editingProfile) { profileEditSheet(for: $0) }
         .confirmationDialog(
-            Strings.profileDeleteTitle, isPresented: $confirmDeleteProfile,
-            titleVisibility: .visible
+            Strings.deleteProfileTitle(model.profile.displayName),
+            isPresented: $confirmDeleteProfile, titleVisibility: .visible
         ) {
-            Button(Strings.profileDeleteConfirm, role: .destructive) {
-                guard let profile = profileToDelete else { return }
-                do { try model.deleteProfile(profile) }
-                catch { profileError = error.localizedDescription }
-            }
+            Button(Strings.deleteProfileConfirm, role: .destructive) { model.deleteProfile() }
             Button(Strings.cancel, role: .cancel) {}
         } message: {
-            Text(Strings.profileDeleteMessage(profileToDelete?.name ?? ""))
+            Text(deleteProfileMessage)
         }
+        .sheet(item: $editor) { sheet(for: $0) }
         .onAppear {
             model.refresh()
             modifiers.watch()
@@ -101,48 +93,36 @@ struct ContentView: View {
         .padding(.vertical, 16)
     }
 
+    /// The profile the whole window is about, and where profiles are made and
+    /// deleted. Locked while an install or a game is under way, each bound to
+    /// the profile it started in.
     private var profileMenu: some View {
         Menu {
-            ForEach(model.profiles) { profile in
-                Menu {
-                    Button {
-                        model.selectProfile(profile)
-                    } label: {
-                        Label(Strings.profile(profile.name), systemImage: "person.crop.circle")
-                    }
-                    if profile.id != "main" {
-                        Divider()
-                        Button(Strings.menuEditProfile) {
-                            profileError = nil
-                            editingProfile = profile
-                        }
-                        Button(Strings.menuDeleteProfile, role: .destructive) {
-                            profileToDelete = profile
-                            confirmDeleteProfile = true
-                        }
-                    }
-                } label: {
-                    HStack {
-                        Text(profile.name)
-                        if profile == model.selectedProfile { Image(systemName: "checkmark") }
-                    }
-                }
-                .disabled(model.phase.isBusy)
+            Picker(Strings.menuProfile, selection: Binding(
+                get: { model.profile }, set: { model.selectProfile($0) })
+            ) {
+                ForEach(model.profiles) { Text($0.displayName).tag($0) }
             }
+            .pickerStyle(.inline)
+            .labelsHidden()
             Divider()
             Button(Strings.menuNewProfile) {
                 newProfileName = ""
-                profileError = nil
-                showNewProfile = true
+                newProfileError = nil
+                editor = .newProfile
             }
-            .disabled(model.phase.isBusy)
+            Button(Strings.menuDeleteProfile(model.profile.displayName), role: .destructive) {
+                confirmDeleteProfile = true
+            }
+            .disabled(!model.profile.isDeletable)
         } label: {
-            Label(Strings.profile(model.selectedProfile.name), systemImage: "person.crop.circle")
+            Label(model.profile.displayName, systemImage: "person.crop.circle")
+                .labelStyle(.titleAndIcon)
         }
         .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
         .fixedSize()
-        .help(Strings.profile(model.selectedProfile.name))
+        .disabled(!model.phase.allowsProfileSelection)
+        .help(Strings.profileHelp)
     }
 
     private var actionsMenu: some View {
@@ -156,6 +136,10 @@ struct ContentView: View {
             Toggle(Strings.menuCommandShortcuts, isOn: $model.commandShortcuts)
                 .disabled(model.phase.isBusy)
                 .help(Strings.commandShortcutsHelp)
+            Toggle(Strings.menuFunctionKeys, isOn: $model.functionKeys)
+                .help(Strings.functionKeysHelp)
+            Toggle(Strings.menuDiscordPresence, isOn: $model.discordPresence)
+                .help(Strings.discordPresenceHelp)
             Divider()
             Button(Strings.menuReinstallClient) { confirmReinstall = true }
                 .disabled(model.phase.isBusy)
@@ -163,6 +147,10 @@ struct ContentView: View {
                 Button(Strings.menuClientURL) { editor = .clientURL }
                 Divider()
                 Toggle(Strings.menuMetalHUD, isOn: $model.metalHUD)
+                Picker(Strings.menuX87Backend, selection: $model.x87Backend) {
+                    ForEach(X87Backend.allCases) { Text($0.menuLabel).tag($0) }
+                }
+                .pickerStyle(.menu)
                 Button(Strings.menuWineDebug) { editor = .wineDebug }
                 Button(Strings.menuEnvironment) { editor = .environment }
                 Divider()
@@ -283,17 +271,32 @@ struct ContentView: View {
                 Button {
                     model.play()
                 } label: {
-                    Label(Strings.play, systemImage: "play.fill")
+                    playLabel
                         .frame(minWidth: 90)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .keyboardShortcut(.defaultAction)
                 .disabled(!model.canPlay)
+                .animation(.easeInOut(duration: 0.15), value: model.isStarting)
             }
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 16)
+    }
+
+    /// A spinner in place of the triangle while a press is being held back,
+    /// so the click visibly landed and there is no reason to click again.
+    @ViewBuilder
+    private var playLabel: some View {
+        if model.isStarting {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text(Strings.starting)
+            }
+        } else {
+            Label(Strings.play, systemImage: "play.fill")
+        }
     }
 
     private func transferred(_ progress: DownloadProgress) -> String {
@@ -379,80 +382,15 @@ struct ContentView: View {
         return Strings.clearMessage(folder, size)
     }
 
+    private var deleteProfileMessage: String {
+        let folder = model.profileFolder.path(percentEncoded: false)
+        guard let size = model.profileSizeText else {
+            return Strings.deleteProfileMessageNoSize(folder)
+        }
+        return Strings.deleteProfileMessage(folder, size)
+    }
+
     // MARK: - Sheets
-
-    private var newProfileSheet: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(Strings.profileTitle)
-                .font(.headline)
-            Text(Strings.profileExplanation)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            TextField(Strings.profileField, text: $newProfileName)
-                .textFieldStyle(.roundedBorder)
-                .onSubmit { createProfile() }
-            if let profileError {
-                Text(profileError)
-                    .font(.callout)
-                    .foregroundStyle(.red)
-            }
-            HStack {
-                Spacer()
-                Button(Strings.cancel) { showNewProfile = false }
-                Button(Strings.profileCreate) { createProfile() }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(newProfileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-        }
-        .padding(20)
-        .frame(width: 460)
-    }
-
-    private func createProfile() {
-        do {
-            try model.createProfile(name: newProfileName)
-            showNewProfile = false
-        } catch {
-            profileError = error.localizedDescription
-        }
-    }
-
-    private func profileEditSheet(for profile: Profile) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(Strings.profileEditTitle)
-                .font(.headline)
-            Text(Strings.profileExplanation)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            TextField(Strings.profileField, text: $newProfileName)
-                .textFieldStyle(.roundedBorder)
-                .onAppear { newProfileName = profile.name }
-                .onSubmit { saveProfileName(profile) }
-            if let profileError {
-                Text(profileError)
-                    .font(.callout)
-                    .foregroundStyle(.red)
-            }
-            HStack {
-                Spacer()
-                Button(Strings.cancel) { editingProfile = nil }
-                Button(Strings.profileSave) { saveProfileName(profile) }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(newProfileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-        }
-        .padding(20)
-        .frame(width: 460)
-    }
-
-    private func saveProfileName(_ profile: Profile) {
-        do {
-            try model.renameProfile(profile, name: newProfileName)
-            editingProfile = nil
-        } catch {
-            profileError = error.localizedDescription
-        }
-    }
 
     @ViewBuilder
     private func sheet(for editor: Editor) -> some View {
@@ -472,6 +410,8 @@ struct ContentView: View {
                 title: Strings.environmentTitle, explanation: Strings.environmentExplanation,
                 field: Strings.environmentField, text: $model.extraEnvironmentText,
                 default: "")
+        case .newProfile:
+            newProfileSheet
         }
     }
 
@@ -504,5 +444,49 @@ struct ContentView: View {
         }
         .padding(20)
         .frame(width: 460)
+    }
+
+    /// The new profile's name, checked as it is typed so Create is only ever
+    /// pressed on one that will do. An empty field is not a mistake yet, so it
+    /// only keeps Create disabled.
+    private var newProfileSheet: some View {
+        let problem = model.profileNameProblem(newProfileName)
+        let typed = !newProfileName.trimmingCharacters(in: .whitespaces).isEmpty
+        return VStack(alignment: .leading, spacing: 12) {
+            Text(Strings.newProfileTitle)
+                .font(.headline)
+            Text(Strings.newProfileExplanation)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            TextField(Strings.newProfileField, text: $newProfileName)
+                .textFieldStyle(.roundedBorder)
+            if let message = newProfileError ?? (typed ? problem : nil) {
+                Text(message)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+            }
+            HStack {
+                Spacer()
+                Button(Strings.cancel) { editor = nil }
+                    .keyboardShortcut(.cancelAction)
+                Button(Strings.newProfileCreate) { createProfile() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(problem != nil)
+            }
+        }
+        .padding(20)
+        .frame(width: 460)
+        .onChange(of: newProfileName) { newProfileError = nil }
+    }
+
+    /// A name that passed the check can still fail on disk; that says so in
+    /// the sheet rather than closing it.
+    private func createProfile() {
+        do {
+            try model.createProfile(named: newProfileName)
+            editor = nil
+        } catch {
+            newProfileError = error.localizedDescription
+        }
     }
 }

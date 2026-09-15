@@ -3,6 +3,7 @@
 /* Janela e botões */
 "app.title" = "ROSilicon";
 "button.play" = "Jogar";
+"button.starting" = "Iniciando…";
 "button.install" = "Instalar";
 "button.repair" = "Reparar";
 "button.cancel" = "Cancelar";
@@ -21,8 +22,16 @@
 "menu.reinstall_client" = "Reinstalar cliente do jogo…";
 "menu.client_url" = "URL do cliente…";
 "menu.metal_hud" = "Mostrar medidor de FPS do Metal";
+"menu.x87_backend" = "Tradução x87";
+"menu.x87_backend.sidecar" = "x87sidecar (padrão)";
+"menu.x87_backend.rosettax87_jit" = "rosettax87_jit (pede sua senha)";
+"menu.x87_backend.disabled" = "Nenhuma (Rosetta padrão)";
 "menu.command_shortcuts" = "Usar ⌘ nos atalhos do jogo";
 "help.command_shortcuts" = "Envia ⌘A/C/V/X/Z ao jogo como atalhos com Alt, em vez de comandos de edição do Mac. Use Control para editar texto. Vale ao iniciar o jogo novamente; desative para restaurar os comandos de edição do Mac.";
+"menu.function_keys" = "Usar F1–F12 como teclas de função no jogo";
+"help.function_keys" = "Enquanto o jogo está aberto, a fileira de cima envia F1–F12 para as barras de atalhos em vez de brilho, volume e o resto; segure fn para esses. É o mesmo ajuste do Mac inteiro que existe em Ajustes do Sistema, emprestado enquanto houver um cliente aberto e devolvido assim que o último fecha.";
+"menu.discord_presence" = "Mostrar a atividade do jogo no Discord";
+"help.discord_presence" = "Enquanto o jogo estiver aberto, o app do Discord mostra que você está jogando Ragnarok Online, e há quanto tempo. Precisa do app do Discord aberto neste Mac; quem vê depende das configurações de Privacidade de atividades do Discord. Vale na hora.";
 "menu.wine_debug" = "Canais de depuração do Wine (WINEDEBUG)…";
 "menu.environment" = "Variáveis de ambiente adicionais…";
 "menu.winecfg" = "Abrir a configuração do Wine (winecfg)";
@@ -40,8 +49,8 @@
 "dialog.quit.message" = "Isso desliga tudo que estiver rodando no prefixo do Wine. O progresso não salvo é perdido.";
 "dialog.clear.title" = "Mover a instalação para o Lixo?";
 "dialog.clear.confirm" = "Mover para o Lixo";
-"dialog.clear.message" = "Tudo em %1$@ (%2$@) vai para o Lixo: a build do Wine, o prefixo, o cliente do jogo e as configurações. Instalar de novo baixa tudo outra vez.";
-"dialog.clear.message_no_size" = "Tudo em %@ vai para o Lixo: a build do Wine, o prefixo, o cliente do jogo e as configurações. Instalar de novo baixa tudo outra vez.";
+"dialog.clear.message" = "Tudo em %1$@ (%2$@) vai para o Lixo: todos os perfis, inclusive o padrão, com o prefixo do Wine, o cliente do jogo e as configurações de cada um. Instalar de novo baixa tudo outra vez.";
+"dialog.clear.message_no_size" = "Tudo em %@ vai para o Lixo: todos os perfis, inclusive o padrão, com o prefixo do Wine, o cliente do jogo e as configurações de cada um. Instalar de novo baixa tudo outra vez.";
 
 /* Painéis */
 "sheet.client_url.title" = "URL de download do cliente";
@@ -64,6 +73,27 @@
 "dialog.profile_delete.title" = "Excluir perfil?";
 "dialog.profile_delete.confirm" = "Excluir perfil";
 "dialog.profile_delete.message" = "A instalação de %@ será movida para a Lixeira. Os outros perfis não serão afetados.";
+
+/* Perfis */
+"profile.default" = "Padrão";
+"menu.profile" = "Perfil";
+"help.profile" = "Cada perfil é um prefixo do Wine próprio, com o seu próprio cliente do jogo e configurações. Troque de perfil quando nada estiver instalando ou em execução.";
+"menu.new_profile" = "Novo perfil…";
+"menu.delete_profile" = "Apagar perfil “%@”…";
+"sheet.new_profile.title" = "Novo perfil";
+"sheet.new_profile.explanation" = "Um perfil é um prefixo do Wine próprio, guardado na pasta profiles, com o seu próprio cliente do jogo e configurações. Depois de criá-lo, aperte Instalar para prepará-lo.";
+"sheet.new_profile.field" = "Nome";
+"sheet.new_profile.create" = "Criar";
+"dialog.delete_profile.title" = "Mover o perfil “%@” para o Lixo?";
+"dialog.delete_profile.confirm" = "Mover para o Lixo";
+"dialog.delete_profile.message" = "Tudo em %1$@ (%2$@) vai para o Lixo: o prefixo do Wine do perfil, o cliente do jogo e as configurações dele. Os outros perfis continuam como estão.";
+"dialog.delete_profile.message_no_size" = "Tudo em %@ vai para o Lixo: o prefixo do Wine do perfil, o cliente do jogo e as configurações dele. Os outros perfis continuam como estão.";
+"step.removing_profile" = "Removendo o perfil %@";
+"step.profile_removed" = "Perfil %@ removido";
+"error.profile_name_empty" = "Dê um nome ao perfil";
+"error.profile_name_invalid" = "O nome de um perfil não pode começar com ponto nem conter / ou :";
+"error.profile_name_taken" = "Já existe um perfil chamado %@";
+"error.default_profile_not_deletable" = "O perfil padrão não pode ser apagado";
 
 /* Lista de verificação */
 "item.rosetta" = "Rosetta 2";
@@ -128,16 +158,22 @@
 "log.removed" = "(removido)";
 "log.launching" = "Iniciando o cliente…";
 "log.metal_hud" = "Medidor de FPS do Metal ligado.";
+"log.rosettax87_jit" = "O código x87 roda com o rosettax87_jit — o macOS pede sua senha para deixá-lo se conectar ao jogo.";
+"log.x87_disabled" = "Sem tradução x87 acelerada: o código x87 do cliente roda no Rosetta padrão, mais lento.";
 "log.command_shortcuts_on" = "Atalhos do jogo com Command ativados: menu Editar do Mac desativado para Ragexe.exe.";
 "log.command_shortcuts_off" = "Atalhos do jogo com Command desativados: comandos de edição do Mac restaurados para Ragexe.exe.";
+"log.function_keys_standard" = "Teclas de função: F1–F12 para o jogo, restauradas ao fechar";
+"log.function_keys_restored" = "Teclas de função: de volta ao ajuste do próprio Mac";
+"log.function_keys_not_restored" = "Teclas de função: não foi possível restaurar — veja Ajustes do Sistema › Teclado";
+"log.function_keys_unavailable" = "Teclas de função: este Mac não permitiu mudar o ajuste, ficando como está";
+"log.discord_presence" = "O Discord mostra Ragnarok Online como sua atividade.";
+"log.discord_presence_refused" = "O Discord recusou a atividade do jogo: %@";
 "log.wine_debug" = "WINEDEBUG=%@";
 "log.extra_environment" = "Ambiente adicional: %@";
 "log.opening_tool" = "Abrindo %@…";
 "log.tool_exited" = "%1$@ terminou com o status %2$d.";
 "log.exited_normally" = "O jogo foi encerrado normalmente.";
 "log.unknown_size" = "tamanho desconhecido";
-
-/* Correção do wintrust */
 
 /* Erros */
 "error.prefix" = "erro: ";

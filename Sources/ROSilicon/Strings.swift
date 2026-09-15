@@ -20,6 +20,7 @@ enum Strings {
 
     static var appTitle: String { t("app.title") }
     static var play: String { t("button.play") }
+    static var starting: String { t("button.starting") }
     static var install: String { t("button.install") }
     static var repair: String { t("button.repair") }
     static var cancel: String { t("button.cancel") }
@@ -39,8 +40,16 @@ enum Strings {
     static var menuReinstallClient: String { t("menu.reinstall_client") }
     static var menuClientURL: String { t("menu.client_url") }
     static var menuMetalHUD: String { t("menu.metal_hud") }
+    static var menuX87Backend: String { t("menu.x87_backend") }
+    static var menuX87Sidecar: String { t("menu.x87_backend.sidecar") }
+    static var menuRosettaX87JIT: String { t("menu.x87_backend.rosettax87_jit") }
+    static var menuX87Disabled: String { t("menu.x87_backend.disabled") }
     static var menuCommandShortcuts: String { t("menu.command_shortcuts") }
     static var commandShortcutsHelp: String { t("help.command_shortcuts") }
+    static var menuFunctionKeys: String { t("menu.function_keys") }
+    static var functionKeysHelp: String { t("help.function_keys") }
+    static var menuDiscordPresence: String { t("menu.discord_presence") }
+    static var discordPresenceHelp: String { t("help.discord_presence") }
     static var menuWineDebug: String { t("menu.wine_debug") }
     static var menuEnvironment: String { t("menu.environment") }
     static var menuWinecfg: String { t("menu.winecfg") }
@@ -89,6 +98,37 @@ enum Strings {
     static var profileDeleteConfirm: String { t("dialog.profile_delete.confirm") }
     static func profileDeleteMessage(_ name: String) -> String {
         t("dialog.profile_delete.message", name)
+    }
+
+    // MARK: - Profiles
+
+    static var profileDefault: String { t("profile.default") }
+    static var menuProfile: String { t("menu.profile") }
+    static var profileHelp: String { t("help.profile") }
+    static func menuDeleteProfile(_ name: String) -> String { t("menu.delete_profile", name) }
+    static var newProfileTitle: String { t("sheet.new_profile.title") }
+    static var newProfileExplanation: String { t("sheet.new_profile.explanation") }
+    static var newProfileField: String { t("sheet.new_profile.field") }
+    static var newProfileCreate: String { t("sheet.new_profile.create") }
+    static func deleteProfileTitle(_ name: String) -> String {
+        t("dialog.delete_profile.title", name)
+    }
+    static var deleteProfileConfirm: String { t("dialog.delete_profile.confirm") }
+    static func deleteProfileMessage(_ folder: String, _ size: String) -> String {
+        t("dialog.delete_profile.message", folder, size)
+    }
+    static func deleteProfileMessageNoSize(_ folder: String) -> String {
+        t("dialog.delete_profile.message_no_size", folder)
+    }
+    static func stepRemovingProfile(_ name: String) -> String { t("step.removing_profile", name) }
+    static func stepProfileRemoved(_ name: String) -> String { t("step.profile_removed", name) }
+    static var errorProfileNameEmpty: String { t("error.profile_name_empty") }
+    static var errorProfileNameInvalid: String { t("error.profile_name_invalid") }
+    static func errorProfileNameTaken(_ name: String) -> String {
+        t("error.profile_name_taken", name)
+    }
+    static var errorDefaultProfileNotDeletable: String {
+        t("error.default_profile_not_deletable")
     }
 
     // MARK: - Checklist
@@ -167,8 +207,18 @@ enum Strings {
     static var logRemoved: String { t("log.removed") }
     static var logLaunching: String { t("log.launching") }
     static var logMetalHUD: String { t("log.metal_hud") }
+    static var logRosettaX87JIT: String { t("log.rosettax87_jit") }
+    static var logX87Disabled: String { t("log.x87_disabled") }
     static var logCommandShortcutsOn: String { t("log.command_shortcuts_on") }
     static var logCommandShortcutsOff: String { t("log.command_shortcuts_off") }
+    static var logFunctionKeysStandard: String { t("log.function_keys_standard") }
+    static var logFunctionKeysRestored: String { t("log.function_keys_restored") }
+    static var logFunctionKeysNotRestored: String { t("log.function_keys_not_restored") }
+    static var logFunctionKeysUnavailable: String { t("log.function_keys_unavailable") }
+    static var logDiscordPresence: String { t("log.discord_presence") }
+    static func logDiscordPresenceRefused(_ message: String) -> String {
+        t("log.discord_presence_refused", message)
+    }
     static func logWineDebug(_ channels: String) -> String { t("log.wine_debug", channels) }
     static func logExtraEnvironment(_ variables: String) -> String {
         t("log.extra_environment", variables)
@@ -179,9 +229,6 @@ enum Strings {
     }
     static var logExitedNormally: String { t("log.exited_normally") }
     static var unknownSize: String { t("log.unknown_size") }
-
-    // MARK: - The wintrust patch
-
 
     // MARK: - Errors
 

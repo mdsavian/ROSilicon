@@ -58,6 +58,9 @@ struct GameRunner: Sendable {
     /// Untouched by default, which is the launcher's own quiet environment.
     var options = LaunchOptions()
     var keyboard = GameKeyboardSettings()
+    /// The x87 hook 32-bit programs run under, for the game and Wine's tools
+    /// alike. x87sidecar unless someone chose otherwise in the menu.
+    var x87 = X87Backend.default
 
     /// Shuts down everything in the prefix. Wine's own way of doing it, so a
     /// hung client goes down with it rather than being orphaned.
@@ -82,7 +85,7 @@ struct GameRunner: Sendable {
             throw RunError.missingFile(tool.executable, executable)
         }
 
-        var environment = paths.wineEnvironment()
+        var environment = paths.wineEnvironment(x87: x87)
         await applyOptions(to: &environment)
         await reporter.log(Strings.logOpeningTool(tool.label))
         // Nothing is logged on success: winecfg blocks until its window is
@@ -99,7 +102,7 @@ struct GameRunner: Sendable {
     func play() async throws {
         let steamExe = try prepare()
 
-        var environment = paths.wineEnvironment()
+        var environment = paths.wineEnvironment(x87: x87)
         environment["WINEDLLOVERRIDES"] = "d3d9=n,b"        // DXVK instead of Wine's D3D9
         environment["MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS"] = "1"
         environment["DXVK_ASYNC"] = "1"
@@ -108,6 +111,14 @@ struct GameRunner: Sendable {
         if metalHUD {
             environment["MTL_HUD_ENABLED"] = "1"
             await reporter.log(Strings.logMetalHUD)
+        }
+        // Anything but the default is said: rosettax87_jit's before the
+        // password prompt appears, so it does not come out of nowhere, and no
+        // hook at all so a slow game says why.
+        switch x87 {
+        case .sidecar: break
+        case .rosettaX87JIT: await reporter.log(Strings.logRosettaX87JIT)
+        case .disabled: await reporter.log(Strings.logX87Disabled)
         }
         await applyOptions(to: &environment)
 
@@ -140,7 +151,7 @@ struct GameRunner: Sendable {
     }
 
     /// Checks the pieces are in place and links DXVK and the Steam stub, both
-    /// inside the app, into the prefix. The links are rewritten every launch,
+    /// inside the app, into the prefix. The links are checked every launch,
     /// so one left pointing at an app that has since moved is replaced rather
     /// than followed. Returns the path of steam.exe inside drive_c.
     @discardableResult
@@ -154,19 +165,27 @@ struct GameRunner: Sendable {
         guard FileManager.default.fileExists(atPath: Paths.steamStub.path) else {
             throw RunError.missingFile("steam_stub.exe", Paths.steamStub)
         }
+        // Without it Wine would quietly run the client under stock Rosetta,
+        // playable but slow — not what someone who chose a hook asked for.
+        if let location = x87.bundledLocation, x87.executable == nil {
+            throw RunError.missingFile(x87.rawValue, location)
+        }
         guard FileManager.default.fileExists(atPath: paths.gameDir.path) else {
             throw RunError.gameNotInstalled(paths.gameDir)
         }
 
         let steamExe = paths.driveC.appending(path: "steam.exe")
-        try link(Paths.dxvkDLL, at: paths.gameDir.appending(path: "d3d9.dll"))
-        try link(Paths.steamStub, at: steamExe)
+        try Self.link(Paths.dxvkDLL, at: paths.gameDir.appending(path: "d3d9.dll"))
+        try Self.link(Paths.steamStub, at: steamExe)
         return steamExe
     }
 
-    /// `ln -sfn`: replace whatever is there with a symlink.
-    private func link(_ target: URL, at location: URL) throws {
+    /// `ln -sfn`: replace whatever is there with a symlink — unless it already
+    /// is that symlink. A client started beside a running one must not find
+    /// d3d9.dll missing because the second launch was busy rewriting it.
+    static func link(_ target: URL, at location: URL) throws {
         let fm = FileManager.default
+        if (try? fm.destinationOfSymbolicLink(atPath: location.path)) == target.path { return }
         if (try? location.checkResourceIsReachable()) == true
             || (try? fm.attributesOfItem(atPath: location.path)) != nil {
             try fm.removeItem(at: location)

@@ -6,6 +6,7 @@
 /* Window and buttons */
 "app.title" = "ROSilicon";
 "button.play" = "Play";
+"button.starting" = "Starting…";
 "button.install" = "Install";
 "button.repair" = "Repair";
 "button.cancel" = "Cancel";
@@ -24,8 +25,16 @@
 "menu.reinstall_client" = "Reinstall Game Client…";
 "menu.client_url" = "Client URL…";
 "menu.metal_hud" = "Show Metal Frame-Rate Overlay";
+"menu.x87_backend" = "x87 Translation";
+"menu.x87_backend.sidecar" = "x87sidecar (Default)";
+"menu.x87_backend.rosettax87_jit" = "rosettax87_jit (Asks for Your Password)";
+"menu.x87_backend.disabled" = "None (Stock Rosetta)";
 "menu.command_shortcuts" = "Use ⌘ for Game Shortcuts";
 "help.command_shortcuts" = "Pass ⌘A/C/V/X/Z to the game as Alt shortcuts instead of Mac editing commands. Use Control for text editing. Applies on the next game launch; turn off to restore Mac editing commands.";
+"menu.function_keys" = "Use F1–F12 as Function Keys in Game";
+"help.function_keys" = "While the game runs, the top row sends F1–F12 for the hotkey bars instead of brightness, volume and the rest; hold fn for those. This is the same Mac-wide setting System Settings has, borrowed for as long as a client is open and put back the moment the last one closes.";
+"menu.discord_presence" = "Show Game Activity in Discord";
+"help.discord_presence" = "While the game runs, the Discord app shows you playing Ragnarok Online, and for how long. Needs the Discord app open on this Mac; who sees it is up to Discord's Activity Privacy settings. Takes effect right away.";
 "menu.wine_debug" = "Wine Debug Channels (WINEDEBUG)…";
 "menu.environment" = "Additional Environment Variables…";
 "menu.winecfg" = "Open Wine Configuration (winecfg)";
@@ -43,8 +52,8 @@
 "dialog.quit.message" = "This shuts down everything in the Wine prefix. Unsaved progress is lost.";
 "dialog.clear.title" = "Move the installation to the Trash?";
 "dialog.clear.confirm" = "Move to Trash";
-"dialog.clear.message" = "Everything in %1$@ (%2$@) goes to the Trash: the Wine build, the prefix, the game client and its settings. Installing again downloads it all afresh.";
-"dialog.clear.message_no_size" = "Everything in %@ goes to the Trash: the Wine build, the prefix, the game client and its settings. Installing again downloads it all afresh.";
+"dialog.clear.message" = "Everything in %1$@ (%2$@) goes to the Trash: every profile, the default one included, with its Wine prefix, game client and settings. Installing again downloads it all afresh.";
+"dialog.clear.message_no_size" = "Everything in %@ goes to the Trash: every profile, the default one included, with its Wine prefix, game client and settings. Installing again downloads it all afresh.";
 
 /* Sheets */
 "sheet.client_url.title" = "Client download URL";
@@ -67,6 +76,27 @@
 "dialog.profile_delete.title" = "Delete profile?";
 "dialog.profile_delete.confirm" = "Delete Profile";
 "dialog.profile_delete.message" = "This moves the installation for %@ to the Trash. Other profiles are not affected.";
+
+/* Profiles */
+"profile.default" = "Default";
+"menu.profile" = "Profile";
+"help.profile" = "Each profile is a Wine prefix of its own, with its own game client and settings. Switch profiles while nothing is installing or running.";
+"menu.new_profile" = "New Profile…";
+"menu.delete_profile" = "Delete Profile “%@”…";
+"sheet.new_profile.title" = "New profile";
+"sheet.new_profile.explanation" = "A profile is a Wine prefix of its own, kept in the profiles folder, with its own game client and settings. Press Install after creating it to set it up.";
+"sheet.new_profile.field" = "Name";
+"sheet.new_profile.create" = "Create";
+"dialog.delete_profile.title" = "Move the profile “%@” to the Trash?";
+"dialog.delete_profile.confirm" = "Move to Trash";
+"dialog.delete_profile.message" = "Everything in %1$@ (%2$@) goes to the Trash: the profile's Wine prefix, its game client and its settings. The other profiles are left as they are.";
+"dialog.delete_profile.message_no_size" = "Everything in %@ goes to the Trash: the profile's Wine prefix, its game client and its settings. The other profiles are left as they are.";
+"step.removing_profile" = "Removing the profile %@";
+"step.profile_removed" = "Profile %@ removed";
+"error.profile_name_empty" = "Give the profile a name";
+"error.profile_name_invalid" = "A profile name cannot start with a dot or contain / or :";
+"error.profile_name_taken" = "There is already a profile called %@";
+"error.default_profile_not_deletable" = "The default profile cannot be deleted";
 
 /* Checklist */
 "item.rosetta" = "Rosetta 2";
@@ -131,16 +161,22 @@
 "log.removed" = "(removed)";
 "log.launching" = "Launching the client…";
 "log.metal_hud" = "Metal frame-rate overlay on.";
+"log.rosettax87_jit" = "x87 code runs under rosettax87_jit — macOS asks for your password to let it attach to the game.";
+"log.x87_disabled" = "No accelerated x87 translation: the client's x87 code runs under stock Rosetta, more slowly.";
 "log.command_shortcuts_on" = "Game Command shortcuts on: the Mac Edit menu is disabled for Ragexe.exe.";
 "log.command_shortcuts_off" = "Game Command shortcuts off: Mac editing commands restored for Ragexe.exe.";
+"log.function_keys_standard" = "Function keys: F1–F12 for the game, restored when it closes";
+"log.function_keys_restored" = "Function keys: back to the Mac's own setting";
+"log.function_keys_not_restored" = "Function keys: could not be put back — check System Settings › Keyboard";
+"log.function_keys_unavailable" = "Function keys: this Mac would not let the setting be changed, leaving it alone";
+"log.discord_presence" = "Discord shows Ragnarok Online as your activity.";
+"log.discord_presence_refused" = "Discord refused the game activity: %@";
 "log.wine_debug" = "WINEDEBUG=%@";
 "log.extra_environment" = "Extra environment: %@";
 "log.opening_tool" = "Opening %@…";
 "log.tool_exited" = "%1$@ exited with status %2$d.";
 "log.exited_normally" = "The game exited normally.";
 "log.unknown_size" = "unknown size";
-
-/* The wintrust patch */
 
 /* Errors */
 "error.prefix" = "error: ";
