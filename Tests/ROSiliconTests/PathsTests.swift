@@ -46,7 +46,7 @@ struct PathsTests {
 
     /// The folder existing is not proof the prefix was booted: any wine call
     /// with WINEPREFIX set creates it, and only a finished bootstrap leaves
-    /// both of these behind.
+    /// the registry and both sides of the WoW64 system DLL layout behind.
     @Test func prefixCountsAsInitializedOnlyOnceBootstrapFinished() throws {
         let temp = try TemporaryDirectory()
         let paths = Paths(root: temp.url)

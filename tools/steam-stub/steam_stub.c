@@ -54,11 +54,24 @@ void launchGame() {
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+    char configuredMutex[256];
+    DWORD mutexLength = GetEnvironmentVariableA(
+        "RO_SILICON_MUTEX", configuredMutex, sizeof(configuredMutex));
+    const char *mutexName = mutexLength > 0 && mutexLength < sizeof(configuredMutex)
+        ? configuredMutex
+        : "Global\\SteamDummyMonitor";
+    HANDLE hMutex = CreateMutexA(NULL, TRUE, mutexName);
+    BOOL alreadyRunning = (GetLastError() == ERROR_ALREADY_EXISTS);
+
     launchGame();
 
-    // Every stub waits while any client is open, not only the first one
-    // started: with several clients open, each stub returns when the last of
-    // them closes, so the launcher sees one session however many it started.
+    // A second launch in the same prefix still starts its client, but does not
+    // keep a second launcher job waiting on the same Windows session mutex.
+    if (alreadyRunning) {
+        CloseHandle(hMutex);
+        return 0;
+    }
+
     const char *watchList[] = {
         "Ragexe.exe",
         "Ragnarok.exe",
@@ -69,5 +82,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         Sleep(2000);
     }
 
+    CloseHandle(hMutex);
     return 0;
 }

@@ -129,7 +129,8 @@ struct GameRunner: Sendable {
         // The client is started through steam.exe because it expects a Steam
         // process to be present.
         let status = try await Shell.run(
-            paths.wine, [steamExe.path], environment: environment
+            paths.wine, [steamExe.path], environment: environment,
+            currentDirectory: paths.gameDir
         ) { line in await reporter.log(line) }
 
         if Task.isCancelled { throw CancellationError() }

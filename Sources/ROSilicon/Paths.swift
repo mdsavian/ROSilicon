@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 enum BundledToolsError: LocalizedError {
@@ -56,7 +57,8 @@ struct Paths: Sendable {
     var prefixInitialized: Bool {
         let fm = FileManager.default
         return fm.fileExists(atPath: prefix.appending(path: "system.reg").path)
-            && fm.fileExists(atPath: driveC.appending(path: "windows/system32").path)
+            && fm.fileExists(atPath: driveC.appending(path: "windows/system32/kernel32.dll").path)
+            && fm.fileExists(atPath: driveC.appending(path: "windows/syswow64/kernel32.dll").path)
     }
 
     /// Where the app keeps everything it ships with: the Wine runtime, DXVK,
@@ -94,6 +96,15 @@ struct Paths: Sendable {
 
     /// rosettax87_jit's loader, nil when the app was built without it.
     static var rosettaX87JIT: URL? { rosettaX87JIT(in: rosettaX87JITFolder) }
+
+    /// Gives each Wine prefix its own Windows global namespace for the Steam
+    /// stub. Without this, two profiles can mistake one another for the same
+    /// running client when they are launched at the same time.
+    private var steamMutexName: String {
+        let digest = SHA256.hash(data: Data(root.standardizedFileURL.path.utf8))
+        let suffix = digest.prefix(12).map { String(format: "%02x", $0) }.joined()
+        return "Global\\ROSilicon-\(suffix)"
+    }
 
     /// The loader in `folder`, provided libRuntimeRosettax87 is beside it: the
     /// loader reads the runtime from its own folder, so one without the other
@@ -141,6 +152,7 @@ struct Paths: Sendable {
         env["WINEPREFIX"] = prefix.path
         env["WINELOADER"] = wine.path
         env["WINESERVER"] = wineserver.path
+        env["RO_SILICON_MUTEX"] = steamMutexName
         // Wine's loader re-execs itself under `x87sidecar --cooperative` or
         // rosettax87_jit's `runtime_loader`, whichever is named here, and
         // under neither when the hook is disabled. That is what makes the

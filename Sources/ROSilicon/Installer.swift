@@ -15,6 +15,7 @@ enum InstallError: LocalizedError {
     case wineRunning
     case wineRuntimeMissing(URL)
     case sidecarMissing(URL)
+    case prefixBootstrapIncomplete(URL)
     case rosettaMissing
     case notAppleSilicon
 
@@ -24,6 +25,8 @@ enum InstallError: LocalizedError {
         case .wineRunning: Strings.errorWineRunning
         case .wineRuntimeMissing(let url): Strings.errorWineRuntimeMissing(url.path)
         case .sidecarMissing(let url): Strings.errorSidecarMissing(url.path)
+        case .prefixBootstrapIncomplete(let url):
+            "Wine prefix could not be completed at \(url.path)."
         case .rosettaMissing: Strings.errorRosettaMissing(Rosetta.installCommand)
         case .notAppleSilicon: Strings.errorNotAppleSilicon
         }
@@ -129,11 +132,23 @@ struct Installer: Sendable {
             await reporter.log(Strings.logPrefixExists(paths.prefix.path))
             return
         }
+        let preservedClient = try preserveClientWhileRecreatingPrefix()
+        defer {
+            if let preservedClient {
+                try? FileManager.default.createDirectory(
+                    at: paths.gameDir.deletingLastPathComponent(),
+                    withIntermediateDirectories: true)
+                try? FileManager.default.moveItem(at: preservedClient, to: paths.gameDir)
+            }
+        }
         await reporter.step(Strings.stepCreatingPrefix)
         await reporter.log(Strings.logCreatingPrefix(paths.prefix.path))
         try FileManager.default.createDirectory(at: paths.prefix, withIntermediateDirectories: true)
 
-        var environment = paths.wineEnvironment()
+        // Prefix bootstrap must use Wine's stock loader. The x87 sidecar is
+        // for the legacy game process; under wineboot it can leave the WoW64
+        // syswow64 tree unpopulated even though wineboot exits successfully.
+        var environment = paths.wineEnvironment(x87: .disabled)
         environment["WINEDEBUG"] = "-all"
         let status = try await Shell.run(
             paths.wine, ["wineboot", "--init"], environment: environment
@@ -142,7 +157,27 @@ struct Installer: Sendable {
             throw ProcessFailure(command: "wineboot", status: status, output: "")
         }
         _ = try? await Shell.run(paths.wineserver, ["-w"], environment: environment)
+        guard paths.prefixInitialized else {
+            throw InstallError.prefixBootstrapIncomplete(paths.prefix)
+        }
         await reporter.log(Strings.logPrefixReady)
+    }
+
+    /// Wine does not repair an already-created prefix when a runtime changes
+    /// its WoW64 layout. Recreate the prefix in that case, keeping the game
+    /// directory so an install can be repaired without downloading the client
+    /// again.
+    private func preserveClientWhileRecreatingPrefix() throws -> URL? {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: paths.prefix.path) else { return nil }
+
+        let client = paths.gameDir
+        let preserved = paths.root.appending(path: ".prefix-client-\(UUID().uuidString)")
+        if fm.fileExists(atPath: client.path) {
+            try fm.moveItem(at: client, to: preserved)
+        }
+        try fm.removeItem(at: paths.prefix)
+        return fm.fileExists(atPath: preserved.path) ? preserved : nil
     }
 
     // MARK: - 3. The game client

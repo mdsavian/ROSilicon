@@ -58,8 +58,12 @@ command -v swift >/dev/null 2>&1 || {
 }
 
 echo "==> building (release)"
-swift build -c release --package-path "$PKG"
-BIN="$(swift build -c release --package-path "$PKG" --show-bin-path)/$EXECUTABLE"
+SWIFT_BUILD_OPTIONS=(-c release --package-path "$PKG")
+if [[ "${SWIFT_BUILD_DISABLE_SANDBOX:-0}" == 1 ]]; then
+    SWIFT_BUILD_OPTIONS+=(--disable-sandbox)
+fi
+swift build "${SWIFT_BUILD_OPTIONS[@]}"
+BIN="$(swift build "${SWIFT_BUILD_OPTIONS[@]}" --show-bin-path)/$EXECUTABLE"
 
 # DXVK, the Steam stub and x87sidecar ride inside the bundle, so the app
 # installs and runs without needing tools/ next to it.
